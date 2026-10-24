@@ -19,6 +19,8 @@ class IdentitySettings(ServiceSettings):
     public_url: str = "http://localhost:8080"
     smtp_host: str = ""
     smtp_port: int = 587
+    # SSL direto (porta 465). Com False, usa STARTTLS.
+    smtp_ssl: bool = False
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "MORBiDus <nao-responda@localhost>"

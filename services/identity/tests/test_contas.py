@@ -108,6 +108,38 @@ def test_admin_libera_limite(client):
         assert client.get("/auth/verify", headers=CONSULTA).status_code == 200
 
 
+def test_porta_465_usa_ssl_direto(monkeypatch):
+    from identity_svc import correio
+
+    usados = []
+
+    class Falso:
+        def __init__(self, host, port, timeout):
+            usados.append((type(self).__name__, port))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self):
+            usados.append("starttls")
+
+        def login(self, u, s):
+            usados.append("login")
+
+        def send_message(self, m):
+            usados.append(m["To"])
+
+    monkeypatch.setattr(correio.smtplib, "SMTP_SSL", type("SMTP_SSL", (Falso,), {}))
+    monkeypatch.setattr(correio.smtplib, "SMTP", type("SMTP", (Falso,), {}))
+    base = dict(smtp_host="smtp.exemplo", smtp_user="u@exemplo.com", smtp_from="MORBiDus <u@exemplo.com>")
+    correio.envia_confirmacao(IdentitySettings(smtp_port=465, **base), "a@b.com", "A", "tok")
+    correio.envia_confirmacao(IdentitySettings(smtp_port=587, **base), "c@d.com", "C", "tok")
+    assert usados == [("SMTP_SSL", 465), "login", "a@b.com", ("SMTP", 587), "starttls", "login", "c@d.com"]
+
+
 def test_confirmacao_de_email(monkeypatch):
     enviados = []
     monkeypatch.setattr(contas, "envia_confirmacao", lambda s, para, nome, token: enviados.append(token))
