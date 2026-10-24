@@ -22,7 +22,7 @@ Clientes (API) ──► Traefik (API key + rate limit) ──► query-svc ─�
                                                                ▲
 crawler-svc ──(obituary.raw)──► Kafka ──► resolver-svc ────────┘
      │                                         │
-     └──► MinIO (HTML bruto)                   └──► Postgres
+     └──► HTML bruto (volume ou S3)                   └──► Postgres
 ```
 
 | Serviço | Papel |
@@ -30,11 +30,11 @@ crawler-svc ──(obituary.raw)──► Kafka ──► resolver-svc ───
 | `identity` | Tenants, API keys (só o hash fica salvo) e o `forwardAuth` do gateway |
 | `query` | Consulta por CPF e/ou nome, calcula o score e publica `query.performed` |
 | `provider` | Interface única para provedores oficiais, com cache e circuit breaker |
-| `crawler` | Um spider por fonte, respeita `robots.txt`, guarda o HTML bruto no MinIO |
+| `crawler` | Um spider por fonte, respeita `robots.txt`, guarda o HTML bruto em volume ou S3 |
 | `resolver` | Normaliza nome, data e idade, junta a mesma pessoa vinda de fontes diferentes, indexa |
 | `audit` | Trilha append-only de todas as consultas (trigger bloqueia UPDATE e DELETE) |
 
-Infraestrutura: Traefik, Redpanda (compatível com Kafka), Postgres (um banco por serviço), OpenSearch, MinIO, Prometheus e Grafana.
+Infraestrutura: Traefik, Redpanda (compatível com Kafka), Postgres (um banco por serviço), OpenSearch, volume para o HTML bruto (ou qualquer S3), Prometheus e Grafana.
 
 ## Rodando
 
@@ -70,7 +70,7 @@ Todos os serviços rodam com barramento e índice em memória, então os testes 
 
 ```bash
 python -m venv .venv
-.venv/Scripts/pip install -e libs/morbidus-common "psycopg[binary]" httpx beautifulsoup4 minio "uvicorn[standard]" pytest pytest-asyncio
+.venv/Scripts/pip install -e libs/morbidus-common "psycopg[binary]" httpx beautifulsoup4 "uvicorn[standard]" pytest pytest-asyncio
 .venv/Scripts/python -m pytest
 ```
 

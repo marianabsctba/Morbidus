@@ -86,23 +86,6 @@ services:
     networks: [morbidus]
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
-    command: server /data --console-address :9001
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    volumes:
-      - minio-data:/data
-    ports:
-      - "${MINIO_CONSOLE_BIND:-127.0.0.1:9001}:9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      retries: 20
-    networks: [morbidus]
-    restart: unless-stopped
-
   identity:
     <<: *service
     build: { <<: *build, args: { SERVICE: identity } }
@@ -131,11 +114,13 @@ services:
     build: { <<: *build, args: { SERVICE: crawler } }
     environment:
       BUS_BACKEND: kafka
-      RAW_STORE_BACKEND: minio
-      MINIO_ENDPOINT: minio:9000
+      # HTML bruto em volume. Para S3 (AWS, R2, Garage): RAW_STORE_BACKEND=minio + MINIO_*.
+      RAW_STORE_BACKEND: file
+      RAW_STORE_DIR: /data/raw
+    volumes:
+      - raw-data:/data/raw
     depends_on:
       redpanda: { condition: service_healthy }
-      minio: { condition: service_healthy }
     labels:
       # Só a listagem de fontes fica pública (leitura). Coleta e backfill continuam internos.
       - traefik.enable=true
@@ -236,4 +221,4 @@ volumes:
   pg-data:
   redpanda-data:
   os-data:
-  minio-data:
+  raw-data:

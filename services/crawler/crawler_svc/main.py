@@ -12,7 +12,7 @@ from morbidus_common.web import create_app
 
 from crawler_svc.config import CrawlerSettings
 from crawler_svc.fetcher import PoliteFetcher
-from crawler_svc.rawstore import MemoryRawStore, MinioRawStore, RawStore
+from crawler_svc.rawstore import FileRawStore, MemoryRawStore, MinioRawStore, RawStore
 from crawler_svc.runner import run_spider
 from crawler_svc.spiders import SPIDERS
 
@@ -20,6 +20,8 @@ log = logging.getLogger(__name__)
 
 
 def _make_store(settings: CrawlerSettings) -> RawStore:
+    if settings.raw_store_backend == "file":
+        return FileRawStore(settings.raw_store_dir)
     if settings.raw_store_backend == "minio":
         return MinioRawStore(
             settings.minio_endpoint,

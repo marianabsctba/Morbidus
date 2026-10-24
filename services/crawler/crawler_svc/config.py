@@ -9,7 +9,8 @@ class CrawlerSettings(ServiceSettings):
     crawl_interval_minutes: int = 0
     user_agent: str = "MORBiDusBot/0.1 (+https://github.com/marianabsctba/Morbidus)"
     request_delay_seconds: float = 5.0
-    raw_store_backend: str = "memory"  # memory | minio
+    raw_store_backend: str = "memory"  # memory | file | minio (qualquer S3)
+    raw_store_dir: str = "/data/raw"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "morbidus"
     minio_secret_key: str = "morbidus-dev"

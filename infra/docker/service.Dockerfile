@@ -8,7 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PACKAGE=${SERVICE}_svc
 
-RUN useradd --create-home --uid 10001 morbidus
+RUN useradd --create-home --uid 10001 morbidus \
+    && mkdir -p /data/raw && chown morbidus:morbidus /data/raw
 WORKDIR /app
 
 COPY libs/morbidus-common /libs/morbidus-common

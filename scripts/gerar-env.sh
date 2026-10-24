@@ -40,9 +40,6 @@ LOG_LEVEL=INFO
 POSTGRES_USER=morbidus
 POSTGRES_PASSWORD=$(segredo)
 
-MINIO_ACCESS_KEY=morbidus
-MINIO_SECRET_KEY=$(segredo)
-
 ADMIN_TOKEN=$(segredo)
 API_KEY_PEPPER=$(segredo)
 AUDIT_CPF_SALT=$(segredo)

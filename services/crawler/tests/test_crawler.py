@@ -35,6 +35,16 @@ async def test_recoleta_gera_mesmos_event_ids():
     assert len(ids) == 6 and len(set(ids)) == 3
 
 
+def test_file_raw_store_grava_e_bloqueia_path_traversal(tmp_path):
+    from crawler_svc.rawstore import FileRawStore
+
+    store = FileRawStore(str(tmp_path))
+    store.put("fonte/2026/10/24/abc.html", b"<html></html>")
+    assert (tmp_path / "fonte/2026/10/24/abc.html").read_bytes() == b"<html></html>"
+    with pytest.raises(ValueError):
+        store.put("../fora.html", b"x")
+
+
 async def test_fetcher_respeita_robots():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":

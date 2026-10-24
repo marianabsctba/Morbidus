@@ -20,7 +20,7 @@ Edite o `.env`:
 
 | Variável | Valor |
 | --- | --- |
-| `POSTGRES_PASSWORD`, `MINIO_SECRET_KEY` | senhas fortes e diferentes |
+| `POSTGRES_PASSWORD` | senha forte |
 | `ADMIN_TOKEN`, `API_KEY_PEPPER`, `AUDIT_CPF_SALT` | segredos longos e aleatórios (`openssl rand -hex 32`) |
 | `ENABLED_PROVIDERS` | vazio (o mock não pode ir para produção) |
 | `DOMAIN` | o domínio, por exemplo `morbidus.besafe.academy` |
@@ -64,6 +64,6 @@ Nessa variante, `/v1/admin` fica bloqueado no nginx. A administração é feita 
 - [ ] `ENABLED_PROVIDERS` vazio
 - [ ] HTTPS funcionando e HTTP redirecionando
 - [ ] `/v1/admin` respondendo 403 fora dos IPs liberados
-- [ ] Backup diário dos volumes `pg-data` e `minio-data`
+- [ ] Backup diário dos volumes `pg-data` e `raw-data`
 - [ ] Política de privacidade publicada explicando finalidade, base legal (prevenção à fraude, LGPD art. 7º, IX e art. 11, II, g) e canal do titular
 - [ ] Encarregado (DPO) definido para atender pedidos de titulares
