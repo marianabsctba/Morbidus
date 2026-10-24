@@ -77,6 +77,7 @@ ROTAS = [
     ("/v1/sessao", "identity", False, None),
     ("/v1/consultas", "query", True, {"POST"}),
     ("/v1/auditoria", "audit", True, {"GET"}),
+    ("/v1/alertas", "audit", True, {"GET", "PATCH"}),
     ("/v1/estatisticas", "resolver", True, {"GET"}),
     ("/v1/sources", "crawler", True, {"GET"}),
 ]

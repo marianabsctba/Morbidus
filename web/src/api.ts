@@ -82,6 +82,7 @@ export interface Conta {
   consultas_hoje: number;
   criado_em: string;
   admin: boolean;
+  mfa_ativo: boolean;
 }
 
 export interface UsuarioAdmin {
@@ -94,6 +95,7 @@ export interface UsuarioAdmin {
   liberado: boolean;
   ativo: boolean;
   admin: boolean;
+  mfa_ativo: boolean;
   limite_diario: number;
   consultas_hoje: number;
   criado_em: string;
@@ -101,7 +103,24 @@ export interface UsuarioAdmin {
 
 export type UsuarioAdminIn = Partial<Pick<UsuarioAdmin, "liberado" | "ativo" | "admin">> & {
   limite_diario?: number | null;
+  resetar_mfa?: boolean;
 };
+
+export interface Alerta {
+  id: string;
+  regra: string;
+  rotulo: string;
+  severidade: "alta" | "media";
+  tenant_id: string | null;
+  ip: string | null;
+  descricao: string;
+  evidencias: Record<string, number>;
+  criado_em: string;
+  status: "aberto" | "resolvido";
+  resolvido_em: string | null;
+}
+
+export type RespostaLogin = { mfa: false; nome: string } | { mfa: true; desafio: string };
 
 export interface AuditEntryGeral extends AuditEntry {
   tenant_id: string;
@@ -146,7 +165,13 @@ const json = (method: string, body?: unknown): RequestInit => ({
 export const api = {
   cadastrar: (body: CadastroIn) => chamar<{ verificacao_necessaria: boolean; aprovacao_necessaria: boolean }>("/v1/contas", json("POST", body)),
   verificar: (token: string) => chamar<{ ok: boolean }>("/v1/contas/verificar", json("POST", { token })),
-  entrar: (email: string, senha: string) => chamar<{ nome: string }>("/v1/sessao", json("POST", { email, senha })),
+  entrar: (email: string, senha: string) => chamar<RespostaLogin>("/v1/sessao", json("POST", { email, senha })),
+  entrarMfa: (desafio: string, codigo: string) =>
+    chamar<{ nome: string }>("/v1/sessao/mfa", json("POST", { desafio, codigo })),
+  mfaIniciar: () => chamar<{ segredo: string; uri: string }>("/v1/conta/mfa/iniciar", json("POST")),
+  mfaAtivar: (codigo: string) =>
+    chamar<{ codigos_recuperacao: string[] }>("/v1/conta/mfa/ativar", json("POST", { codigo })),
+  mfaDesativar: (codigo: string) => chamar<void>("/v1/conta/mfa/desativar", json("POST", { codigo })),
   sair: () => chamar<void>("/v1/sessao", json("DELETE")),
   conta: () => chamar<Conta>("/v1/conta"),
   consultar: (body: ConsultaIn) => chamar<ConsultaOut>("/v1/consultas", json("POST", body)),
@@ -163,4 +188,7 @@ export const api = {
     if (filtros.ip) q.set("ip", filtros.ip);
     return chamar<AuditEntryGeral[]>(`/v1/auditoria/geral?${q}`);
   },
+  alertas: (status: "aberto" | "resolvido" = "aberto") => chamar<Alerta[]>(`/v1/alertas?status=${status}`),
+  alterarAlerta: (id: string, status: "aberto" | "resolvido") =>
+    chamar<Alerta>(`/v1/alertas/${id}`, json("PATCH", { status })),
 };

@@ -77,3 +77,6 @@ class QueryPerformed(Event):
     # Registro de acesso (Marco Civil, art. 15). Só a administração vê.
     ip_origem: str | None = None
     user_agent: str | None = None
+    # Há quantos dias morreu a pessoa do obituário mais recente encontrado.
+    # Usado pelo detector de abuso: caçar óbitos recentes é padrão de fraudador.
+    dias_desde_obito: int | None = None

@@ -17,7 +17,19 @@ from sqlalchemy.orm import Session
 from identity_svc.config import IdentitySettings
 from identity_svc.correio import envia_confirmacao
 from identity_svc.keys import generate_key
-from identity_svc.models import Administrador, ApiKey, Sessao, Tenant, UsoDiario, Usuario, Verificacao
+from identity_svc import mfa
+from identity_svc.models import (
+    Administrador,
+    ApiKey,
+    DesafioMfa,
+    MfaConfig,
+    MfaRecuperacao,
+    Sessao,
+    Tenant,
+    UsoDiario,
+    Usuario,
+    Verificacao,
+)
 from identity_svc.seguranca import SENHA_FALSA, confere_senha, hash_senha, hash_token, novo_token
 
 COOKIE = "mbd_sessao"
@@ -68,6 +80,15 @@ class TokenIn(BaseModel):
     token: str
 
 
+class CodigoIn(BaseModel):
+    codigo: str = Field(max_length=20)
+
+
+class MfaLoginIn(BaseModel):
+    desafio: str = Field(max_length=100)
+    codigo: str = Field(max_length=20, description="Código do aplicativo ou de recuperação")
+
+
 class ContaOut(BaseModel):
     nome: str
     email: str
@@ -77,6 +98,7 @@ class ContaOut(BaseModel):
     consultas_hoje: int
     criado_em: datetime
     admin: bool
+    mfa_ativo: bool
 
 
 class UsuarioAdmin(BaseModel):
@@ -89,12 +111,14 @@ class UsuarioAdmin(BaseModel):
     liberado: bool
     ativo: bool
     admin: bool
+    mfa_ativo: bool
     limite_diario: int
     consultas_hoje: int
     criado_em: datetime
 
 
 class UsuarioAdminIn(BaseModel):
+    resetar_mfa: bool | None = None
     liberado: bool | None = None
     ativo: bool | None = None
     admin: bool | None = None
@@ -150,6 +174,24 @@ def eh_admin(db: Session, usuario_id: str) -> bool:
     return db.get(Administrador, usuario_id) is not None
 
 
+def mfa_ativo(db: Session, usuario_id: str) -> bool:
+    config = db.get(MfaConfig, usuario_id)
+    return config is not None and config.ativo
+
+
+def eh_admin_efetivo(db: Session, usuario_id: str) -> bool:
+    """Poderes de administração exigem MFA ativo."""
+    return eh_admin(db, usuario_id) and mfa_ativo(db, usuario_id)
+
+
+def apaga_mfa(db: Session, usuario_id: str) -> None:
+    config = db.get(MfaConfig, usuario_id)
+    if config:
+        db.delete(config)
+    for codigo in db.scalars(select(MfaRecuperacao).where(MfaRecuperacao.usuario_id == usuario_id)):
+        db.delete(codigo)
+
+
 def _aware(dt: datetime) -> datetime:
     # SQLite devolve datas sem fuso; o Postgres devolve com fuso.
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -158,6 +200,41 @@ def _aware(dt: datetime) -> datetime:
 def build_router(settings: IdentitySettings, get_db) -> APIRouter:
     router = APIRouter(tags=["contas"])
     email_obrigatorio = bool(settings.smtp_host)
+    cofre = mfa.Cofre(settings.api_key_pepper)
+
+    def _abrir_sessao(response: Response, db: Session, usuario: Usuario) -> dict:
+        agora = utcnow()
+        for velha in db.scalars(select(Sessao).where(Sessao.usuario_id == usuario.id)):
+            if _aware(velha.expira_em) < agora:
+                db.delete(velha)
+        token, digest = novo_token()
+        db.add(Sessao(token_hash=digest, usuario_id=usuario.id, expira_em=agora + timedelta(hours=settings.sessao_horas)))
+        db.commit()
+        response.set_cookie(
+            COOKIE,
+            token,
+            max_age=settings.sessao_horas * 3600,
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite="strict",
+            path="/",
+        )
+        return {"mfa": False, "nome": usuario.nome, "email": usuario.email}
+
+    def _confere_segundo_fator(db: Session, usuario_id: str, codigo: str) -> bool:
+        config = db.get(MfaConfig, usuario_id)
+        if config is None or not config.ativo:
+            return False
+        segredo = cofre.decifra(config.segredo_cifrado)
+        passo = mfa.confere_totp(segredo, codigo, config.ultimo_passo) if segredo else None
+        if passo is not None:
+            config.ultimo_passo = passo
+            return True
+        recuperacao = db.get(MfaRecuperacao, hash_token(mfa.normaliza_recuperacao(codigo)))
+        if recuperacao and recuperacao.usuario_id == usuario_id and recuperacao.usado_em is None:
+            recuperacao.usado_em = utcnow()
+            return True
+        return False
 
     def usuario_logado(mbd_sessao: str | None = Cookie(default=None), db: Session = Depends(get_db)) -> Usuario:
         usuario = usuario_da_sessao(db, mbd_sessao)
@@ -168,6 +245,8 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
     def admin_logado(usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)) -> Usuario:
         if not eh_admin(db, usuario.id):
             raise HTTPException(status_code=403, detail="acesso restrito à administração")
+        if not mfa_ativo(db, usuario.id):
+            raise HTTPException(status_code=403, detail="ative o MFA em Minha conta para usar a administração")
         return usuario
 
     def _para_admin(db: Session, u: Usuario) -> UsuarioAdmin:
@@ -181,6 +260,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             liberado=u.email_verificado,
             ativo=u.ativo,
             admin=eh_admin(db, u.id),
+            mfa_ativo=mfa_ativo(db, u.id),
             limite_diario=limite_do_tenant(db, settings, u.tenant_id),
             consultas_hoje=consultas_hoje(db, u.tenant_id),
             criado_em=u.criado_em,
@@ -245,23 +325,74 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             raise HTTPException(status_code=403, detail="sua conta aguarda aprovação da administração")
         usuario.falhas_login = 0
         usuario.bloqueado_ate = None
-        agora = utcnow()
-        for velha in db.scalars(select(Sessao).where(Sessao.usuario_id == usuario.id)):
-            if _aware(velha.expira_em) < agora:
-                db.delete(velha)
-        token, digest = novo_token()
-        db.add(Sessao(token_hash=digest, usuario_id=usuario.id, expira_em=agora + timedelta(hours=settings.sessao_horas)))
+        if mfa_ativo(db, usuario.id):
+            # Senha certa, mas a sessão só abre depois do segundo fator.
+            token, digest = novo_token()
+            db.add(DesafioMfa(token_hash=digest, usuario_id=usuario.id, expira_em=utcnow() + timedelta(minutes=5)))
+            db.commit()
+            return {"mfa": True, "desafio": token}
+        return _abrir_sessao(response, db, usuario)
+
+    @router.post("/v1/sessao/mfa")
+    def entrar_mfa(body: MfaLoginIn, response: Response, db: Session = Depends(get_db)):
+        desafio = db.get(DesafioMfa, hash_token(body.desafio))
+        if desafio is None or _aware(desafio.expira_em) < utcnow():
+            raise HTTPException(status_code=401, detail="login expirado; entre de novo com e-mail e senha")
+        if desafio.tentativas >= _MAX_FALHAS:
+            db.delete(desafio)
+            db.commit()
+            raise HTTPException(status_code=429, detail="muitas tentativas; entre de novo com e-mail e senha")
+        if not _confere_segundo_fator(db, desafio.usuario_id, body.codigo):
+            desafio.tentativas += 1
+            db.commit()
+            raise HTTPException(status_code=401, detail="código inválido")
+        usuario = db.get(Usuario, desafio.usuario_id)
+        db.delete(desafio)
+        if usuario is None or not usuario.ativo:
+            db.commit()
+            raise HTTPException(status_code=403, detail="conta desativada")
+        return _abrir_sessao(response, db, usuario)
+
+    @router.post("/v1/conta/mfa/iniciar")
+    def iniciar_mfa(usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)):
+        if mfa_ativo(db, usuario.id):
+            raise HTTPException(status_code=409, detail="o MFA já está ativo")
+        segredo = mfa.novo_segredo()
+        config = db.get(MfaConfig, usuario.id) or MfaConfig(usuario_id=usuario.id)
+        config.segredo_cifrado = cofre.cifra(segredo)
+        config.ativo = False
+        config.ultimo_passo = None
+        db.merge(config)
         db.commit()
-        response.set_cookie(
-            COOKIE,
-            token,
-            max_age=settings.sessao_horas * 3600,
-            httponly=True,
-            secure=settings.cookie_secure,
-            samesite="strict",
-            path="/",
-        )
-        return {"nome": usuario.nome, "email": usuario.email}
+        return {"segredo": segredo, "uri": mfa.uri_otpauth(segredo, usuario.email)}
+
+    @router.post("/v1/conta/mfa/ativar")
+    def ativar_mfa(body: CodigoIn, usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)):
+        config = db.get(MfaConfig, usuario.id)
+        if config is None or config.ativo:
+            raise HTTPException(status_code=409, detail="comece a configuração de novo")
+        segredo = cofre.decifra(config.segredo_cifrado)
+        passo = mfa.confere_totp(segredo, body.codigo, None) if segredo else None
+        if passo is None:
+            raise HTTPException(status_code=400, detail="código inválido; confira o horário do celular e tente de novo")
+        config.ativo = True
+        config.ultimo_passo = passo
+        for antigo in db.scalars(select(MfaRecuperacao).where(MfaRecuperacao.usuario_id == usuario.id)):
+            db.delete(antigo)
+        codigos = mfa.codigos_recuperacao()
+        for codigo in codigos:
+            db.add(MfaRecuperacao(codigo_hash=hash_token(mfa.normaliza_recuperacao(codigo)), usuario_id=usuario.id))
+        db.commit()
+        return {"codigos_recuperacao": codigos}
+
+    @router.post("/v1/conta/mfa/desativar", status_code=204)
+    def desativar_mfa(body: CodigoIn, usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)):
+        if eh_admin(db, usuario.id):
+            raise HTTPException(status_code=400, detail="administradoras precisam manter o MFA ativo")
+        if not _confere_segundo_fator(db, usuario.id, body.codigo):
+            raise HTTPException(status_code=400, detail="código inválido")
+        apaga_mfa(db, usuario.id)
+        db.commit()
 
     @router.delete("/v1/sessao", status_code=204)
     def sair(response: Response, mbd_sessao: str | None = Cookie(default=None), db: Session = Depends(get_db)):
@@ -283,6 +414,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             consultas_hoje=consultas_hoje(db, usuario.tenant_id),
             criado_em=usuario.criado_em,
             admin=eh_admin(db, usuario.id),
+            mfa_ativo=mfa_ativo(db, usuario.id),
         )
 
     @router.get("/v1/conta/admin/usuarios", response_model=list[UsuarioAdmin])
@@ -308,6 +440,9 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             alvo.ativo = bool(mudancas["ativo"])
         if "limite_diario" in mudancas:
             alvo.limite_diario = mudancas["limite_diario"]
+        if mudancas.get("resetar_mfa"):
+            # Para quem perdeu o celular e os códigos de recuperação.
+            apaga_mfa(db, alvo.id)
         if "admin" in mudancas:
             atual = db.get(Administrador, alvo.id)
             if mudancas["admin"] and atual is None:

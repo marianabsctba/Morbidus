@@ -59,6 +59,8 @@ export default function Entrada({ aoEntrar }: { aoEntrar: () => void }) {
 function FormEntrar({ aoEntrar }: { aoEntrar: () => void }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [desafio, setDesafio] = useState<string | null>(null);
+  const [codigo, setCodigo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
@@ -67,13 +69,73 @@ function FormEntrar({ aoEntrar }: { aoEntrar: () => void }) {
     setErro(null);
     setCarregando(true);
     try {
-      await api.entrar(email, senha);
-      aoEntrar();
+      if (desafio) {
+        await api.entrarMfa(desafio, codigo);
+        aoEntrar();
+        return;
+      }
+      const r = await api.entrar(email, senha);
+      if (r.mfa) {
+        setDesafio(r.desafio);
+        setSenha("");
+      } else {
+        aoEntrar();
+      }
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não foi possível entrar");
+      const msg = err instanceof Error ? err.message : "Não foi possível entrar";
+      setErro(msg);
+      // Desafio vencido ou bloqueado: volta para e-mail e senha.
+      if (desafio && /expirado|tentativas/.test(msg)) {
+        setDesafio(null);
+        setCodigo("");
+      }
     } finally {
       setCarregando(false);
     }
+  }
+
+  if (desafio) {
+    return (
+      <form onSubmit={enviar}>
+        <p className="mudo" style={{ marginTop: 0 }}>
+          Abra o aplicativo autenticador e digite o código de 6 dígitos do MORBiDus. Sem o celular, use um dos
+          códigos de recuperação.
+        </p>
+        <div className="campo">
+          <label htmlFor="codigo-mfa">Código</label>
+          <input
+            id="codigo-mfa"
+            className="codigo-mfa"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+            value={codigo}
+            onChange={(e) => setCodigo(e.target.value)}
+            required
+          />
+        </div>
+        {erro && (
+          <div className="alerta" role="alert" style={{ marginBottom: 16 }}>
+            {erro}
+          </div>
+        )}
+        <button className="botao largo" disabled={carregando || codigo.trim().length < 6}>
+          {carregando ? "Conferindo..." : "Confirmar"}
+        </button>
+        <button
+          type="button"
+          className="botao fantasma"
+          style={{ marginTop: 12 }}
+          onClick={() => {
+            setDesafio(null);
+            setCodigo("");
+            setErro(null);
+          }}
+        >
+          Voltar
+        </button>
+      </form>
+    );
   }
 
   return (

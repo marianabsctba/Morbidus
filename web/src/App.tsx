@@ -10,6 +10,21 @@ import Conta from "./paginas/Conta";
 import Entrada from "./paginas/Entrada";
 import Verificar from "./paginas/Verificar";
 
+function AdminSemMfa() {
+  return (
+    <div className="painel" style={{ maxWidth: 560 }}>
+      <h2>Administração bloqueada</h2>
+      <p>
+        Para proteger os dados de todas as contas, a área de Administração só abre com a verificação em duas
+        etapas (MFA) ativa.
+      </p>
+      <NavLink to="/conta" className="botao">
+        Ativar MFA em Minha conta
+      </NavLink>
+    </div>
+  );
+}
+
 const FX = "morbidus.fx";
 
 function lerFx(): boolean {
@@ -140,10 +155,15 @@ export default function App() {
             />
             <Route path="/auditoria" element={<Auditoria tratarErro={tratarErro} />} />
             <Route path="/cobertura" element={<Cobertura tratarErro={tratarErro} admin={conta.admin} />} />
-            {conta.admin && <Route path="/admin" element={<Admin tratarErro={tratarErro} />} />}
+            {conta.admin && (
+              <Route
+                path="/admin"
+                element={conta.mfa_ativo ? <Admin tratarErro={tratarErro} /> : <AdminSemMfa />}
+              />
+            )}
             <Route
               path="/conta"
-              element={<Conta conta={conta} atualizar={atualizarConta} />}
+              element={<Conta conta={conta} atualizar={atualizarConta} tratarErro={tratarErro} />}
             />
             <Route path="*" element={<Navigate to="/consulta" replace />} />
           </Routes>

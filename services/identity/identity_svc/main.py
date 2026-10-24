@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from identity_svc.config import IdentitySettings
-from identity_svc.contas import build_router, eh_admin, hoje, limite_do_tenant, usuario_da_sessao
+from identity_svc.contas import apaga_mfa, build_router, eh_admin_efetivo, hoje, limite_do_tenant, usuario_da_sessao
 from identity_svc.keys import generate_key, hash_key, parse_prefix
 from identity_svc.models import Administrador, ApiKey, Base, Tenant, UsoDiario, Usuario
 
@@ -56,6 +56,7 @@ class UsuarioAdminIn(BaseModel):
     # 0 libera consultas ilimitadas; nulo volta ao padrão.
     limite_diario: int | None = Field(default=None, ge=0)
     admin: bool | None = None
+    resetar_mfa: bool | None = None
 
 
 def build_app(settings: IdentitySettings | None = None):
@@ -129,6 +130,8 @@ def build_app(settings: IdentitySettings | None = None):
             raise HTTPException(status_code=404, detail="usuário não encontrado")
         mudancas = body.model_dump(exclude_unset=True)
         admin = mudancas.pop("admin", None)
+        if mudancas.pop("resetar_mfa", None):
+            apaga_mfa(db, usuario.id)
         for campo, valor in mudancas.items():
             setattr(usuario, campo, valor)
         atual = db.get(Administrador, usuario.id)
@@ -140,6 +143,13 @@ def build_app(settings: IdentitySettings | None = None):
         return usuario
 
     app.include_router(build_router(settings, get_db))
+
+    @app.get("/interno/admins", include_in_schema=False)
+    def emails_admins(db: Session = Depends(get_db)) -> list[str]:
+        """Para o audit-svc avisar sobre alertas. Rota interna: o gateway não a expõe."""
+        ids = db.scalars(select(Administrador.usuario_id))
+        usuarios = [db.get(Usuario, i) for i in ids]
+        return [u.email for u in usuarios if u is not None and u.ativo]
 
     @app.get("/auth/verify", include_in_schema=False)
     def verify(
@@ -186,7 +196,7 @@ def build_app(settings: IdentitySettings | None = None):
             db.merge(uso)
             db.commit()
 
-        papel = "admin" if usuario is not None and eh_admin(db, usuario.id) else ""
+        papel = "admin" if usuario is not None and eh_admin_efetivo(db, usuario.id) else ""
         # Sempre devolve todos os cabeçalhos, para o gateway sobrescrever o que o cliente mandar.
         return Response(
             status_code=200, headers={"X-Tenant-Id": tenant.id, "X-Api-Key-Id": key_id, "X-Papel": papel}

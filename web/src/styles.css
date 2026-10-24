@@ -532,3 +532,30 @@ select.mini {
 }
 .link-ip:hover { color: var(--sangue); }
 @media (max-width: 640px) { .filtros { grid-template-columns: 1fr; } }
+
+/* ---------- MFA e alertas ---------- */
+
+.codigo-mfa { font-size: 24px !important; letter-spacing: 0.4em; text-align: center; }
+.mfa-config { display: grid; grid-template-columns: 220px 1fr; gap: 28px; align-items: start; }
+.qr { background: #fff; padding: 10px; border-radius: 6px; box-shadow: 0 0 30px rgba(255, 42, 61, 0.25); }
+.qr svg { display: block; width: 100%; height: auto; }
+.passos { margin: 0 0 18px; padding-left: 20px; color: var(--osso-2); font-size: 14px; }
+.passos li { margin-bottom: 8px; }
+.segredo { display: block; margin-top: 6px; font-family: var(--f-dado); color: var(--osso); word-break: break-all; }
+.codigos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; list-style: none; padding: 0; margin: 0; }
+.codigos li { font-size: 15px; }
+
+.alertas { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.alerta-card {
+  border: 1px solid var(--borda); border-left: 3px solid var(--brasa); border-radius: var(--raio);
+  padding: 18px 20px; background: rgba(12, 4, 5, 0.92);
+}
+.alerta-card.alta { border-left-color: var(--sangue); box-shadow: inset 4px 0 18px -10px var(--sangue); }
+.alerta-card h3 { margin: 10px 0 6px; font-family: var(--f-marca); font-size: 19px; }
+.alerta-card p { margin: 0 0 8px; }
+.alerta-topo { display: flex; justify-content: space-between; align-items: center; }
+.acoes-alerta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (max-width: 640px) {
+  .mfa-config { grid-template-columns: 1fr; }
+  .qr { max-width: 220px; }
+}

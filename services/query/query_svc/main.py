@@ -161,6 +161,12 @@ def build_app(
             for e in evidencias:
                 e.detalhes.pop("fontes", None)
 
+        dias = [
+            (date.today() - date.fromisoformat(e.detalhes["data_falecimento"])).days
+            for e in evidencias
+            if e.tipo == "obituario" and e.detalhes.get("data_falecimento")
+        ]
+
         score = max((e.score for e in evidencias), default=0.0)
         if any(e.tipo == "oficial" for e in evidencias):
             status = QueryStatus.OBITO_CONFIRMADO
@@ -189,6 +195,7 @@ def build_app(
                 fontes_consultadas=fontes,
                 ip_origem=ip_do_cliente(request),
                 user_agent=(request.headers.get("user-agent") or "")[:300] or None,
+                dias_desde_obito=min(dias) if dias else None,
             ),
             key=tenant.tenant_id,
         )

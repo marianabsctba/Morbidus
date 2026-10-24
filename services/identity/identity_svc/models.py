@@ -65,6 +65,36 @@ class Administrador(Base):
     desde: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MfaConfig(Base):
+    __tablename__ = "mfa"
+
+    usuario_id: Mapped[str] = mapped_column(ForeignKey("usuarios.id"), primary_key=True)
+    segredo_cifrado: Mapped[str] = mapped_column(String(400))
+    # Falso enquanto a pessoa não confirmou o primeiro código.
+    ativo: Mapped[bool] = mapped_column(default=False)
+    ultimo_passo: Mapped[int | None] = mapped_column(Integer, default=None)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MfaRecuperacao(Base):
+    __tablename__ = "mfa_recuperacao"
+
+    codigo_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    usuario_id: Mapped[str] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    usado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class DesafioMfa(Base):
+    """Login com senha certa esperando o segundo fator. Vale 5 minutos."""
+
+    __tablename__ = "desafios_mfa"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    usuario_id: Mapped[str] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    tentativas: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Sessao(Base):
     __tablename__ = "sessoes"
 

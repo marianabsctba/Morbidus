@@ -35,6 +35,17 @@ def _cadastrar_e_liberar(client, cadastro=CADASTRO):
     assert client.patch(f"/v1/admin/usuarios/{email}", json={"email_verificado": True}, headers={"X-Admin-Token": "adm"}).status_code == 200
 
 
+def _ativar_mfa(client) -> list[str]:
+    from identity_svc import mfa
+
+    inicio = client.post("/v1/conta/mfa/iniciar").json()
+    assert inicio["uri"].startswith("otpauth://totp/")
+    codigo = mfa._hotp(inicio["segredo"], mfa.passo_atual())
+    resp = client.post("/v1/conta/mfa/ativar", json={"codigo": codigo})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["codigos_recuperacao"]
+
+
 def _entrar(client, senha=CADASTRO["senha"]):
     return client.post("/v1/sessao", json={"email": "analista@exemplo.com", "senha": senha})
 
@@ -175,6 +186,10 @@ def test_admin_aprova_bloqueia_e_ve_todos(client):
 
     client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"admin": True}, headers={"X-Admin-Token": "adm"})
     assert client.get("/v1/conta").json()["admin"] is True
+    # Admin sem MFA ainda não tem poderes.
+    assert client.get("/auth/verify").headers["X-Papel"] == ""
+    assert "MFA" in client.get("/v1/conta/admin/usuarios").json()["detail"]
+    recuperacao = _ativar_mfa(client)
     assert client.get("/auth/verify").headers["X-Papel"] == "admin"
 
     usuarios = {u["email"]: u for u in client.get("/v1/conta/admin/usuarios").json()}
@@ -189,7 +204,8 @@ def test_admin_aprova_bloqueia_e_ve_todos(client):
     client.cookies.clear()
     assert client.post("/v1/sessao", json={"email": "outra@exemplo.com", "senha": CADASTRO["senha"]}).status_code == 200
     client.cookies.clear()
-    _entrar(client)
+    desafio = _entrar(client).json()["desafio"]
+    assert client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": recuperacao[0]}).status_code == 200
     client.patch(f"/v1/conta/admin/usuarios/{alvo}", json={"ativo": False})
     client.cookies.clear()
     assert client.post("/v1/sessao", json={"email": "outra@exemplo.com", "senha": CADASTRO["senha"]}).status_code == 403
@@ -212,3 +228,58 @@ def test_api_desligada_por_padrao():
         assert client.get("/v1/conta/api-keys").status_code == 404
         client.cookies.clear()
         assert client.get("/auth/verify", headers={"X-API-Key": "mbd_qualquer_coisa"}).status_code == 401
+
+
+def test_login_com_mfa(client):
+    from identity_svc import mfa
+
+    _cadastrar_e_liberar(client)
+    _entrar(client)
+    assert client.get("/v1/conta").json()["mfa_ativo"] is False
+    assert client.post("/v1/conta/mfa/ativar", json={"codigo": "000000"}).status_code == 409
+    inicio = client.post("/v1/conta/mfa/iniciar").json()
+    assert client.post("/v1/conta/mfa/ativar", json={"codigo": "000000"}).status_code == 400
+    codigo = mfa._hotp(inicio["segredo"], mfa.passo_atual())
+    recuperacao = client.post("/v1/conta/mfa/ativar", json={"codigo": codigo}).json()["codigos_recuperacao"]
+    assert len(recuperacao) == 8
+
+    client.delete("/v1/sessao")
+    client.cookies.clear()
+    primeira = _entrar(client)
+    assert primeira.json()["mfa"] is True and "set-cookie" not in primeira.headers
+    desafio = primeira.json()["desafio"]
+    assert client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": "123456"}).status_code == 401
+    # O mesmo código do app não vale duas vezes.
+    assert client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": codigo}).status_code == 401
+    ok = client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": recuperacao[0].upper()})
+    assert ok.status_code == 200 and "set-cookie" in ok.headers
+    assert client.get("/v1/conta").status_code == 200
+
+    # Código de recuperação só funciona uma vez; desafio usado não volta.
+    client.cookies.clear()
+    desafio2 = _entrar(client).json()["desafio"]
+    assert client.post("/v1/sessao/mfa", json={"desafio": desafio2, "codigo": recuperacao[0]}).status_code == 401
+    assert client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": recuperacao[1]}).status_code == 401
+
+
+def test_desafio_mfa_trava_apos_5_erros(client):
+    _cadastrar_e_liberar(client)
+    _entrar(client)
+    _ativar_mfa(client)
+    client.cookies.clear()
+    desafio = _entrar(client).json()["desafio"]
+    for _ in range(5):
+        assert client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": "000000"}).status_code == 401
+    assert client.post("/v1/sessao/mfa", json={"desafio": desafio, "codigo": "000000"}).status_code == 429
+
+
+def test_admin_nao_desativa_mfa_e_reset_pelo_token(client):
+    _cadastrar_e_liberar(client)
+    _entrar(client)
+    recuperacao = _ativar_mfa(client)
+    client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"admin": True}, headers={"X-Admin-Token": "adm"})
+    assert client.post("/v1/conta/mfa/desativar", json={"codigo": recuperacao[0]}).status_code == 400
+    client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"resetar_mfa": True}, headers={"X-Admin-Token": "adm"})
+    assert client.get("/v1/conta").json()["mfa_ativo"] is False
+    client.cookies.clear()
+    assert _entrar(client).json()["mfa"] is False

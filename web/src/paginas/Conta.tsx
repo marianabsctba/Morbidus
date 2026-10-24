@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { Conta as ContaT } from "../api";
+import SegundoFator from "./SegundoFator";
 import { FINALIDADES } from "../dados";
 import { dataHoraBr } from "../util";
 
-type Props = { conta: ContaT; atualizar: () => void };
+type Props = { conta: ContaT; atualizar: () => void; tratarErro: (e: unknown) => string };
 
-export default function Conta({ conta, atualizar }: Props) {
+export default function Conta({ conta, atualizar, tratarErro }: Props) {
   useEffect(atualizar, [atualizar]);
 
   const ilimitado = conta.limite_diario === 0;
@@ -53,6 +54,8 @@ export default function Conta({ conta, atualizar }: Props) {
           </p>
         </div>
       </div>
+
+      <SegundoFator conta={conta} atualizar={atualizar} tratarErro={tratarErro} />
     </>
   );
 }

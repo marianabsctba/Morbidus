@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, AuditEntryGeral, Fonte, UsuarioAdmin, UsuarioAdminIn } from "../api";
+import { Alerta, api, AuditEntryGeral, Fonte, UsuarioAdmin, UsuarioAdminIn } from "../api";
 import { EtiquetaStatus } from "../componentes";
 import { FINALIDADES } from "../dados";
 import { dataHoraBr } from "../util";
 
-type Aba = "usuarios" | "auditoria" | "fontes";
+type Aba = "alertas" | "usuarios" | "auditoria" | "fontes";
 type Props = { tratarErro: (e: unknown) => string };
 
 const LIMITES: [string, number | null][] = [
@@ -15,8 +15,11 @@ const LIMITES: [string, number | null][] = [
 ];
 
 export default function Admin({ tratarErro }: Props) {
-  const [aba, setAba] = useState<Aba>("usuarios");
+  const [aba, setAba] = useState<Aba>("alertas");
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
+  const [alertas, setAlertas] = useState<Alerta[]>([]);
+  const [filtroConta, setFiltroConta] = useState("");
+  const [filtroIp, setFiltroIp] = useState("");
   const [erro, setErro] = useState<string | null>(null);
 
   const carregarUsuarios = useCallback(
@@ -28,9 +31,25 @@ export default function Admin({ tratarErro }: Props) {
     [tratarErro],
   );
 
+  const carregarAlertas = useCallback(
+    () =>
+      api
+        .alertas()
+        .then(setAlertas)
+        .catch((e) => setErro(tratarErro(e))),
+    [tratarErro],
+  );
+
   useEffect(() => {
     carregarUsuarios();
-  }, [carregarUsuarios]);
+    carregarAlertas();
+  }, [carregarUsuarios, carregarAlertas]);
+
+  function verConsultas(alerta: Alerta) {
+    setFiltroConta(alerta.tenant_id ?? "");
+    setFiltroIp(alerta.ip ?? "");
+    setAba("auditoria");
+  }
 
   const pendentes = usuarios.filter((u) => !u.liberado && u.ativo).length;
 
@@ -41,6 +60,9 @@ export default function Admin({ tratarErro }: Props) {
         <p>Visível só para administradoras.</p>
       </div>
       <div className="abas abas-pagina" role="tablist">
+        <button role="tab" aria-selected={aba === "alertas"} onClick={() => setAba("alertas")}>
+          Alertas{alertas.length > 0 && <span className="contador">{alertas.length}</span>}
+        </button>
         <button role="tab" aria-selected={aba === "usuarios"} onClick={() => setAba("usuarios")}>
           Usuários{pendentes > 0 && <span className="contador">{pendentes}</span>}
         </button>
@@ -56,10 +78,33 @@ export default function Admin({ tratarErro }: Props) {
           {erro}
         </div>
       )}
+      {aba === "alertas" && (
+        <Alertas
+          alertas={alertas}
+          usuarios={usuarios}
+          recarregar={() => {
+            carregarAlertas();
+            carregarUsuarios();
+          }}
+          verConsultas={verConsultas}
+          setErro={setErro}
+          tratarErro={tratarErro}
+        />
+      )}
       {aba === "usuarios" && (
         <Usuarios usuarios={usuarios} recarregar={carregarUsuarios} setErro={setErro} tratarErro={tratarErro} />
       )}
-      {aba === "auditoria" && <AuditoriaGeral usuarios={usuarios} tratarErro={tratarErro} setErro={setErro} />}
+      {aba === "auditoria" && (
+        <AuditoriaGeral
+          usuarios={usuarios}
+          conta={filtroConta}
+          setConta={setFiltroConta}
+          ip={filtroIp}
+          setIp={setFiltroIp}
+          tratarErro={tratarErro}
+          setErro={setErro}
+        />
+      )}
       {aba === "fontes" && <Fontes tratarErro={tratarErro} setErro={setErro} />}
     </>
   );
@@ -132,7 +177,8 @@ function Usuarios({
                 <tr key={u.id}>
                   <td>
                     <div>
-                      {u.nome} {u.admin && <span className="etiqueta sangue">admin</span>}
+                      {u.nome} {u.admin && <span className="etiqueta sangue">admin</span>}{" "}
+                      {u.mfa_ativo && <span className="etiqueta">MFA</span>}
                     </div>
                     <div className="dado mudo" style={{ fontSize: 12 }}>
                       {u.email}
@@ -189,6 +235,20 @@ function Usuarios({
                         {u.admin ? "Tirar admin" : "Tornar admin"}
                       </button>
                     )}
+                    {u.mfa_ativo && (
+                      <button
+                        className="botao fantasma"
+                        onClick={() =>
+                          alterar(
+                            u,
+                            { resetar_mfa: true },
+                            `Resetar o MFA de ${u.email}? Ela vai precisar configurar de novo no próximo acesso.`,
+                          )
+                        }
+                      >
+                        Resetar MFA
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -204,16 +264,22 @@ const PAGINA = 50;
 
 function AuditoriaGeral({
   usuarios,
+  conta,
+  setConta,
+  ip,
+  setIp,
   tratarErro,
   setErro,
 }: {
   usuarios: UsuarioAdmin[];
+  conta: string;
+  setConta: (v: string) => void;
+  ip: string;
+  setIp: (v: string) => void;
   tratarErro: (e: unknown) => string;
   setErro: (e: string | null) => void;
 }) {
   const [itens, setItens] = useState<AuditEntryGeral[]>([]);
-  const [conta, setConta] = useState("");
-  const [ip, setIp] = useState("");
   const [fim, setFim] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const porTenant = useMemo(() => Object.fromEntries(usuarios.map((u) => [u.tenant_id, u])), [usuarios]);
@@ -353,6 +419,94 @@ function Fontes({ tratarErro, setErro }: { tratarErro: (e: unknown) => string; s
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function Alertas({
+  alertas,
+  usuarios,
+  recarregar,
+  verConsultas,
+  setErro,
+  tratarErro,
+}: {
+  alertas: Alerta[];
+  usuarios: UsuarioAdmin[];
+  recarregar: () => void;
+  verConsultas: (a: Alerta) => void;
+  setErro: (e: string | null) => void;
+  tratarErro: (e: unknown) => string;
+}) {
+  const porTenant = useMemo(() => Object.fromEntries(usuarios.map((u) => [u.tenant_id, u])), [usuarios]);
+
+  async function resolver(a: Alerta) {
+    setErro(null);
+    try {
+      await api.alterarAlerta(a.id, "resolvido");
+      recarregar();
+    } catch (e) {
+      setErro(tratarErro(e));
+    }
+  }
+
+  async function bloquear(u: UsuarioAdmin, a: Alerta) {
+    if (!window.confirm(`Bloquear ${u.email}? A sessão dela cai na hora e o alerta é marcado como resolvido.`)) return;
+    setErro(null);
+    try {
+      await api.alterarUsuario(u.id, { ativo: false });
+      await api.alterarAlerta(a.id, "resolvido");
+      recarregar();
+    } catch (e) {
+      setErro(tratarErro(e));
+    }
+  }
+
+  if (alertas.length === 0) {
+    return (
+      <div className="painel">
+        <h2>Alertas</h2>
+        <p className="mudo">Nenhuma suspeita de abuso em aberto. O detector avalia cada consulta em tempo real.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="alertas">
+      {alertas.map((a) => {
+        const u = a.tenant_id ? porTenant[a.tenant_id] : undefined;
+        return (
+          <article key={a.id} className={`alerta-card ${a.severidade}`}>
+            <div className="alerta-topo">
+              <span className={`etiqueta ${a.severidade === "alta" ? "sangue" : "brasa"}`}>
+                <span className="ponto" />
+                {a.severidade}
+              </span>
+              <span className="dado mudo" style={{ fontSize: 12 }}>
+                {dataHoraBr(a.criado_em)}
+              </span>
+            </div>
+            <h3>{a.rotulo}</h3>
+            <p>{a.descricao}</p>
+            <p className="dado mudo" style={{ fontSize: 12 }}>
+              {u ? `Conta: ${u.email}${u.ativo ? "" : " (já bloqueada)"}` : a.ip ? `IP: ${a.ip}` : "Conta sem cadastro de usuário"}
+            </p>
+            <div className="acoes-alerta">
+              <button className="botao fantasma" onClick={() => verConsultas(a)}>
+                Ver consultas
+              </button>
+              {u && u.ativo && !u.admin && (
+                <button className="botao fantasma" onClick={() => bloquear(u, a)}>
+                  Bloquear conta
+                </button>
+              )}
+              <button className="botao fantasma" onClick={() => resolver(a)}>
+                Marcar como resolvido
+              </button>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }

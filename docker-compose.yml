@@ -211,7 +211,7 @@ services:
       redpanda: { condition: service_healthy }
     labels:
       - traefik.enable=true
-      - traefik.http.routers.auditoria.rule=PathPrefix(`/v1/auditoria`)
+      - traefik.http.routers.auditoria.rule=PathPrefix(`/v1/auditoria`) || PathPrefix(`/v1/alertas`)
       - traefik.http.routers.auditoria.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.routers.auditoria.middlewares=apikey@docker,ratelimit@docker
       - traefik.http.services.audit.loadbalancer.server.port=8000
