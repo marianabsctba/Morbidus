@@ -10,6 +10,7 @@ from morbidus_common.events import DeathRecordNormalized, Topics
 from morbidus_common.logging import setup_logging
 from morbidus_common.search import DeathIndex, make_index
 from morbidus_common.web import create_app
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from resolver_svc.config import ResolverSettings
@@ -42,6 +43,26 @@ def build_app(
 
     app = create_app("resolver", "Normalização e deduplicação de registros de óbito.", lifespan)
     app.state.resolver = resolver
+
+    @app.get("/v1/estatisticas")
+    def estatisticas():
+        """Números agregados da base, sem nenhum dado pessoal. Usado pelo painel."""
+        with sessions() as db:
+            total = db.scalar(select(func.count()).select_from(DeathRecord))
+            por_uf = db.execute(
+                select(DeathRecord.uf, DeathRecord.cidade, func.count()).group_by(DeathRecord.uf, DeathRecord.cidade)
+            ).all()
+            ultima = db.scalar(select(func.max(DeathRecord.atualizado_em)))
+        ufs: dict[str, dict] = {}
+        for uf, cidade, n in por_uf:
+            item = ufs.setdefault(uf, {"uf": uf, "total": 0, "cidades": {}})
+            item["total"] += n
+            item["cidades"][cidade] = n
+        return {
+            "total": total,
+            "por_uf": sorted(ufs.values(), key=lambda x: x["total"], reverse=True),
+            "atualizado_em": ultima,
+        }
 
     @app.get("/v1/records/{record_id}", response_model=DeathRecordNormalized)
     def get_record(record_id: str):

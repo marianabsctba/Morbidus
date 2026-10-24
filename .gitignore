@@ -10,3 +10,4 @@ node_modules/
 dist/
 .idea/
 .vscode/
+.dev-api-key

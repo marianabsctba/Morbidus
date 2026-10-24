@@ -1,0 +1,41 @@
+# Produção com HTTPS (Let's Encrypt). Sobrepõe o docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requer no .env: DOMAIN, ACME_EMAIL e PUBLIC_ENTRYPOINT=websecure.
+# O DNS do DOMAIN precisa apontar para este servidor, com as portas 80 e 443 abertas.
+
+services:
+  traefik:
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=morbidus
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.certresolver=le
+      - --entrypoints.websecure.http.tls.domains[0].main=${DOMAIN}
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --entrypoints.metrics.address=:8082
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=metrics
+      - --accesslog=true
+      - --accesslog.format=json
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+
+  identity:
+    labels:
+      # Em produção o admin só aceita chamadas da rede interna e de IPs listados.
+      - traefik.http.middlewares.adminonly.ipallowlist.sourcerange=${ADMIN_ALLOWED_IPS:-127.0.0.1/32}
+      - traefik.http.routers.admin.middlewares=adminonly@docker
+
+volumes:
+  letsencrypt:

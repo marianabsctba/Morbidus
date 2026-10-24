@@ -108,7 +108,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.admin.rule=PathPrefix(`/v1/admin`)
-      - traefik.http.routers.admin.entrypoints=web
+      - traefik.http.routers.admin.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.services.identity.loadbalancer.server.port=8000
       # Middlewares usados pelas rotas de clientes (query e audit).
       - traefik.http.middlewares.apikey.forwardauth.address=http://identity:8000/auth/verify
@@ -131,6 +131,13 @@ services:
     depends_on:
       redpanda: { condition: service_healthy }
       minio: { condition: service_healthy }
+    labels:
+      # Só a listagem de fontes fica pública (leitura). Coleta e backfill continuam internos.
+      - traefik.enable=true
+      - traefik.http.routers.fontes.rule=Path(`/v1/sources`) && Method(`GET`)
+      - traefik.http.routers.fontes.entrypoints=${PUBLIC_ENTRYPOINT:-web}
+      - traefik.http.routers.fontes.middlewares=apikey@docker,ratelimit@docker
+      - traefik.http.services.crawler.loadbalancer.server.port=8000
 
   resolver:
     <<: *service
@@ -144,6 +151,26 @@ services:
       postgres: { condition: service_healthy }
       redpanda: { condition: service_healthy }
       opensearch: { condition: service_healthy }
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.estatisticas.rule=Path(`/v1/estatisticas`) && Method(`GET`)
+      - traefik.http.routers.estatisticas.entrypoints=${PUBLIC_ENTRYPOINT:-web}
+      - traefik.http.routers.estatisticas.middlewares=apikey@docker,ratelimit@docker
+      - traefik.http.services.resolver.loadbalancer.server.port=8000
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    restart: unless-stopped
+    networks: [morbidus]
+    labels:
+      # Prioridade mínima: tudo que não for /v1 cai no painel.
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=PathPrefix(`/`)
+      - traefik.http.routers.web.priority=1
+      - traefik.http.routers.web.entrypoints=${PUBLIC_ENTRYPOINT:-web}
+      - traefik.http.services.web.loadbalancer.server.port=80
 
   query:
     <<: *service
@@ -160,7 +187,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.consultas.rule=PathPrefix(`/v1/consultas`)
-      - traefik.http.routers.consultas.entrypoints=web
+      - traefik.http.routers.consultas.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.routers.consultas.middlewares=apikey@docker,ratelimit@docker
       - traefik.http.services.query.loadbalancer.server.port=8000
 
@@ -176,7 +203,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.auditoria.rule=PathPrefix(`/v1/auditoria`)
-      - traefik.http.routers.auditoria.entrypoints=web
+      - traefik.http.routers.auditoria.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.routers.auditoria.middlewares=apikey@docker,ratelimit@docker
       - traefik.http.services.audit.loadbalancer.server.port=8000
 

@@ -60,10 +60,14 @@ async def test_mesma_pessoa_em_duas_fontes_vira_um_registro(ambiente):
 
 
 async def test_homonimo_em_outra_cidade_nao_e_mesclado(ambiente):
-    _, bus, index = ambiente
+    client, bus, index = ambiente
     await bus.publish(Topics.OBITUARY_RAW, _raw("a", "Fulano de Tal da Silva", "https://a/x"))
     await bus.publish(Topics.OBITUARY_RAW, _raw("b", "Fulano de Tal da Silva", "https://b/y", cidade="Londrina"))
     assert len(index.docs) == 2
+    stats = client.get("/v1/estatisticas").json()
+    assert stats["total"] == 2
+    assert stats["por_uf"] == [{"uf": "PR", "total": 2, "cidades": {"Curitiba": 1, "Londrina": 1}}]
+    assert "Fulano" not in str(stats)
 
 
 async def test_data_de_nascimento_separa_homonimos(ambiente):
