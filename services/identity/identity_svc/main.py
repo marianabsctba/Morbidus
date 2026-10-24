@@ -144,6 +144,12 @@ def build_app(settings: IdentitySettings | None = None):
 
     app.include_router(build_router(settings, get_db))
 
+    @app.post("/interno/emails", include_in_schema=False)
+    def emails_por_tenant(tenants: list[str], db: Session = Depends(get_db)) -> dict[str, str]:
+        """Para o audit-svc avisar instituições sobre identidade quente. Rota interna."""
+        usuarios = db.scalars(select(Usuario).where(Usuario.tenant_id.in_(tenants[:200]), Usuario.ativo.is_(True)))
+        return {u.tenant_id: u.email for u in usuarios}
+
     @app.get("/interno/admins", include_in_schema=False)
     def emails_admins(db: Session = Depends(get_db)) -> list[str]:
         """Para o audit-svc avisar sobre alertas. Rota interna: o gateway não a expõe."""

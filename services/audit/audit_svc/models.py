@@ -47,6 +47,19 @@ class Alerta(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(15), default="aberto", index=True)
     resolvido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Alvo de alertas de identidade quente ("registro:<id>" ou "cpf:<hash>").
+    chave: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
+
+
+class IdentidadeConsultada(Base):
+    """Qual identidade cada consulta encontrou com acerto forte. Base da identidade quente."""
+
+    __tablename__ = "identidades_consultadas"
+
+    query_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    chave: Mapped[str] = mapped_column(String(80), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    ocorrido_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 # Colunas acrescentadas depois que a tabela já existia em produção.
@@ -71,6 +84,7 @@ _APPEND_ONLY = [
 def setup_schema(engine: Engine) -> None:
     Base.metadata.create_all(engine)
     ensure_columns(engine, "audit_entries", _COLUNAS_NOVAS)
+    ensure_columns(engine, "alertas", {"chave": "VARCHAR(80)"})
     if engine.dialect.name == "postgresql":
         with engine.begin() as conn:
             for stmt in _APPEND_ONLY:

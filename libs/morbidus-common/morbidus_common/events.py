@@ -54,6 +54,8 @@ class DeathRecordNormalized(Event):
     cidade: str
     uf: str
     fontes: list[str]
+    # Pessoa fictícia plantada na base para detectar vazamento (ver resolver_svc/canarios.py).
+    canario: bool = False
 
 
 class QueryStatus(str, Enum):
@@ -80,3 +82,8 @@ class QueryPerformed(Event):
     # Há quantos dias morreu a pessoa do obituário mais recente encontrado.
     # Usado pelo detector de abuso: caçar óbitos recentes é padrão de fraudador.
     dias_desde_obito: int | None = None
+    # Identidades que bateram com acerto forte: "registro:<id>" (obituário) ou
+    # "cpf:<hash>" (fonte oficial). Base da "identidade quente".
+    identidades: list[str] = Field(default_factory=list)
+    # A consulta bateu numa identidade-canário: o nome veio de fora do MORBiDus.
+    canario: bool = False

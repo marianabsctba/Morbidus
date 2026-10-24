@@ -63,6 +63,12 @@ class Evidencia(BaseModel):
     detalhes: dict
 
 
+class AlertaColetivo(BaseModel):
+    outras_instituicoes: int
+    janela_dias: int
+    mensagem: str
+
+
 class ConsultaOut(BaseModel):
     consulta_id: str
     status: QueryStatus
@@ -70,6 +76,8 @@ class ConsultaOut(BaseModel):
     evidencias: list[Evidencia]
     fontes_indisponiveis: list[str]
     aviso: str | None = None
+    # Esta identidade também está sendo consultada por outras instituições.
+    alerta_coletivo: AlertaColetivo | None = None
 
 
 def ip_do_cliente(request: Request) -> str | None:
@@ -90,6 +98,7 @@ def build_app(
     bus: EventBus | None = None,
     index: DeathIndex | None = None,
     provider_client: httpx.AsyncClient | None = None,
+    audit_client: httpx.AsyncClient | None = None,
 ):
     settings = settings or QuerySettings()
     setup_logging("query", settings.log_level)
@@ -98,6 +107,7 @@ def build_app(
     client = provider_client or httpx.AsyncClient(
         base_url=settings.provider_url, timeout=settings.provider_timeout_seconds
     )
+    auditoria = audit_client or httpx.AsyncClient(base_url=settings.audit_url, timeout=3)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -105,6 +115,7 @@ def build_app(
         yield
         await bus.stop()
         await client.aclose()
+        await auditoria.aclose()
 
     app = create_app("query", "Consulta de identidades falecidas por CPF e nome.", lifespan)
 
@@ -123,9 +134,22 @@ def build_app(
                 evidencias.append(Evidencia(tipo="oficial", fonte=r["provider"], score=1.0, detalhes=r))
         return evidencias, indisponiveis
 
-    async def _obituarios(body: ConsultaIn) -> list[Evidencia]:
+    async def _calor(tenant_id: str, chaves: list[str]) -> int:
+        """Quantas outras instituições bateram nas mesmas identidades na janela. Falha não bloqueia a consulta."""
+        if not chaves:
+            return 0
+        try:
+            resp = await auditoria.get("/interno/calor", params={"tenant": tenant_id, "chave": chaves})
+            resp.raise_for_status()
+            return max(resp.json().values(), default=0)
+        except httpx.HTTPError:
+            log.warning("auditoria indisponível para o cálculo de identidade quente")
+            return 0
+
+    async def _obituarios(body: ConsultaIn, canarios: set[str]) -> list[Evidencia]:
         candidatos = await asyncio.to_thread(index.search, body.nome, body.uf)
         evidencias = []
+        canarios.clear()
         for c in candidatos:
             score, motivos = score_candidate(c, body.nome, body.uf, body.cidade, body.data_nascimento)
             if score >= settings.sinal_fraco_min:
@@ -133,6 +157,8 @@ def build_app(
                 detalhes = {k: c.get(k) for k in campos}
                 detalhes["motivos"] = motivos
                 evidencias.append(Evidencia(tipo="obituario", fonte=c["record_id"], score=score, detalhes=detalhes))
+                if c.get("canario"):
+                    canarios.add(c["record_id"])
         return sorted(evidencias, key=lambda e: e.score, reverse=True)
 
     @app.post("/v1/consultas", response_model=ConsultaOut)
@@ -144,6 +170,7 @@ def build_app(
         evidencias: list[Evidencia] = []
         indisponiveis: list[str] = []
         fontes = []
+        canarios: set[str] = set()
         if cpf:
             fontes.append("oficial")
             oficiais, indisponiveis = await _oficiais(cpf)
@@ -151,7 +178,7 @@ def build_app(
         if body.nome:
             fontes.append("obituario")
             try:
-                evidencias += await _obituarios(body)
+                evidencias += await _obituarios(body, canarios)
             except Exception:
                 log.exception("índice de obituários indisponível")
                 indisponiveis.append("obituario")
@@ -177,6 +204,24 @@ def build_app(
         else:
             status = QueryStatus.SEM_REGISTRO
 
+        cpf_hash = hmac.new(settings.audit_cpf_salt.encode(), cpf.encode(), hashlib.sha256).hexdigest() if cpf else None
+        fortes = [e for e in evidencias if e.tipo == "oficial" or e.score >= settings.sinal_forte_min]
+        chaves = sorted(
+            {f"cpf:{cpf_hash}" if e.tipo == "oficial" else f"registro:{e.fonte}" for e in fortes}
+        )
+        bateu_canario = any(e.tipo == "obituario" and e.fonte in canarios for e in fortes)
+        outras = await _calor(tenant.tenant_id, chaves)
+        alerta_coletivo = None
+        if outras >= settings.calor_outras_instituicoes:
+            alerta_coletivo = AlertaColetivo(
+                outras_instituicoes=outras,
+                janela_dias=settings.calor_janela_dias,
+                mensagem=(
+                    f"Esta identidade foi consultada por outras {outras} instituições nos últimos "
+                    f"{settings.calor_janela_dias} dias. Pode indicar uma campanha de fraude em andamento."
+                ),
+            )
+
         consulta_id = uuid4().hex
         await bus.publish(
             Topics.QUERY_PERFORMED,
@@ -186,9 +231,7 @@ def build_app(
                 api_key_id=tenant.api_key_id,
                 finalidade=body.finalidade.value,
                 cpf_mascarado=mask_cpf(cpf) if cpf else None,
-                cpf_hash=hmac.new(settings.audit_cpf_salt.encode(), cpf.encode(), hashlib.sha256).hexdigest()
-                if cpf
-                else None,
+                cpf_hash=cpf_hash,
                 nome_consultado=body.nome,
                 status=status,
                 score=score,
@@ -196,6 +239,8 @@ def build_app(
                 ip_origem=ip_do_cliente(request),
                 user_agent=(request.headers.get("user-agent") or "")[:300] or None,
                 dias_desde_obito=min(dias) if dias else None,
+                identidades=chaves,
+                canario=bateu_canario,
             ),
             key=tenant.tenant_id,
         )
@@ -207,6 +252,7 @@ def build_app(
             evidencias=evidencias,
             fontes_indisponiveis=indisponiveis,
             aviso=AVISO_OBITUARIO if tem_obituario and status != QueryStatus.OBITO_CONFIRMADO else None,
+            alerta_coletivo=alerta_coletivo,
         )
 
     return app

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alerta, api, AuditEntryGeral, Fonte, UsuarioAdmin, UsuarioAdminIn } from "../api";
+import { Alerta, api, AuditEntryGeral, Canario, Fonte, UsuarioAdmin, UsuarioAdminIn } from "../api";
 import { EtiquetaStatus } from "../componentes";
 import { FINALIDADES } from "../dados";
-import { dataHoraBr } from "../util";
+import { dataBr, dataHoraBr } from "../util";
 
-type Aba = "alertas" | "usuarios" | "auditoria" | "fontes";
+type Aba = "alertas" | "usuarios" | "auditoria" | "fontes" | "canarios" | "cti";
 type Props = { tratarErro: (e: unknown) => string };
 
 const LIMITES: [string, number | null][] = [
@@ -72,6 +72,12 @@ export default function Admin({ tratarErro }: Props) {
         <button role="tab" aria-selected={aba === "fontes"} onClick={() => setAba("fontes")}>
           Fontes
         </button>
+        <button role="tab" aria-selected={aba === "canarios"} onClick={() => setAba("canarios")}>
+          Canários
+        </button>
+        <button role="tab" aria-selected={aba === "cti"} onClick={() => setAba("cti")}>
+          CTI
+        </button>
       </div>
       {erro && (
         <div className="alerta" style={{ marginBottom: 20 }}>
@@ -106,6 +112,8 @@ export default function Admin({ tratarErro }: Props) {
         />
       )}
       {aba === "fontes" && <Fontes tratarErro={tratarErro} setErro={setErro} />}
+      {aba === "canarios" && <Canarios tratarErro={tratarErro} setErro={setErro} />}
+      {aba === "cti" && <Cti />}
     </>
   );
 }
@@ -440,10 +448,15 @@ function Alertas({
 }) {
   const porTenant = useMemo(() => Object.fromEntries(usuarios.map((u) => [u.tenant_id, u])), [usuarios]);
 
-  async function resolver(a: Alerta) {
+  async function resolver(a: Alerta, status: "resolvido" | "confirmado" = "resolvido") {
+    if (
+      status === "confirmado" &&
+      !window.confirm("Confirmar abuso? Os IPs envolvidos passam a ser compartilhados no feed de CTI (TLP:AMBER).")
+    )
+      return;
     setErro(null);
     try {
-      await api.alterarAlerta(a.id, "resolvido");
+      await api.alterarAlerta(a.id, status);
       recarregar();
     } catch (e) {
       setErro(tratarErro(e));
@@ -489,7 +502,13 @@ function Alertas({
             <h3>{a.rotulo}</h3>
             <p>{a.descricao}</p>
             <p className="dado mudo" style={{ fontSize: 12 }}>
-              {u ? `Conta: ${u.email}${u.ativo ? "" : " (já bloqueada)"}` : a.ip ? `IP: ${a.ip}` : "Conta sem cadastro de usuário"}
+              {a.regra === "identidade_quente"
+                ? "As instituições que consultaram esta identidade foram avisadas por e-mail."
+                : u
+                  ? `Conta: ${u.email}${u.ativo ? "" : " (já bloqueada)"}${a.ip ? ` · IP: ${a.ip}` : ""}`
+                  : a.ip
+                    ? `IP: ${a.ip}`
+                    : "Conta sem cadastro de usuário"}
             </p>
             <div className="acoes-alerta">
               <button className="botao fantasma" onClick={() => verConsultas(a)}>
@@ -500,13 +519,115 @@ function Alertas({
                   Bloquear conta
                 </button>
               )}
+              {(a.tenant_id || a.ip) && (
+                <button className="botao fantasma" onClick={() => resolver(a, "confirmado")}>
+                  Confirmar abuso
+                </button>
+              )}
               <button className="botao fantasma" onClick={() => resolver(a)}>
-                Marcar como resolvido
+                {a.regra === "identidade_quente" ? "Ciente" : "Falso positivo"}
               </button>
             </div>
           </article>
         );
       })}
+    </div>
+  );
+}
+
+
+function Canarios({ tratarErro, setErro }: { tratarErro: (e: unknown) => string; setErro: (e: string | null) => void }) {
+  const [canarios, setCanarios] = useState<Canario[]>([]);
+  const [plantando, setPlantando] = useState(false);
+
+  const carregar = useCallback(
+    () =>
+      api
+        .canarios()
+        .then(setCanarios)
+        .catch((e) => setErro(tratarErro(e))),
+    [tratarErro, setErro],
+  );
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  async function plantar() {
+    setPlantando(true);
+    setErro(null);
+    try {
+      await api.plantarCanarios(10);
+      carregar();
+    } catch (e) {
+      setErro(tratarErro(e));
+    } finally {
+      setPlantando(false);
+    }
+  }
+
+  return (
+    <div className="painel">
+      <h2>Identidades-canário</h2>
+      <p className="mudo" style={{ marginTop: -6 }}>
+        Pessoas falecidas fictícias, misturadas na base e fora das estatísticas. Qualquer consulta que bata numa delas gera
+        alerta máximo: quem consultou conseguiu o nome fora do MORBiDus. Procure estes nomes em vazamentos e em tentativas
+        de fraude. Não compartilhe esta lista.
+      </p>
+      <button className="botao" onClick={plantar} disabled={plantando} style={{ marginBottom: 18 }}>
+        {plantando ? "Plantando..." : "Plantar mais 10"}
+      </button>
+      {canarios.length > 0 && (
+        <div className="tabela-wrap">
+          <table className="tabela">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Local</th>
+                <th>Nascimento</th>
+                <th>Falecimento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {canarios.map((c) => (
+                <tr key={c.nome}>
+                  <td className="dado">{c.nome}</td>
+                  <td>
+                    {c.cidade}/{c.uf}
+                  </td>
+                  <td className="dado">{dataBr(c.data_nascimento)}</td>
+                  <td className="dado">{dataBr(c.data_falecimento)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Cti() {
+  const raiz = `${window.location.origin}/taxii2/`;
+  return (
+    <div className="painel">
+      <h2>Feed de inteligência (STIX 2.1 / TAXII 2.1)</h2>
+      <p className="mudo" style={{ marginTop: -6 }}>
+        IPs de alertas que você confirmou como abuso, marcados TLP:AMBER. Nenhum dado de pessoa sai no feed. Indicadores
+        valem por 90 dias após o último alerta.
+      </p>
+      <a className="botao" href="/v1/cti/stix" download>
+        Baixar pacote STIX
+      </a>
+      <dl className="ficha" style={{ marginTop: 22 }}>
+        <dt>Servidor TAXII</dt>
+        <dd className="dado">{raiz}</dd>
+        <dt>Autenticação</dt>
+        <dd>
+          Bearer com o token do feed, ou Basic com qualquer usuário e o token como senha (MISP, OpenCTI). O token fica só
+          no servidor.
+        </dd>
+      </dl>
     </div>
   );
 }

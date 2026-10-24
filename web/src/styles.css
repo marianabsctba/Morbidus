@@ -559,3 +559,9 @@ select.mini {
   .mfa-config { grid-template-columns: 1fr; }
   .qr { max-width: 220px; }
 }
+
+.alerta.coletivo {
+  border-color: var(--sangue); border-left-width: 4px; background: rgba(255, 42, 61, 0.12);
+  box-shadow: 0 0 24px rgba(255, 42, 61, 0.25);
+}
+.alerta.coletivo strong { color: var(--sangue); text-transform: uppercase; letter-spacing: 0.08em; }

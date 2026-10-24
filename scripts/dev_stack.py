@@ -78,7 +78,10 @@ ROTAS = [
     ("/v1/consultas", "query", True, {"POST"}),
     ("/v1/auditoria", "audit", True, {"GET"}),
     ("/v1/alertas", "audit", True, {"GET", "PATCH"}),
+    ("/v1/cti", "audit", True, {"GET"}),
+    ("/taxii2", "audit", False, {"GET"}),
     ("/v1/estatisticas", "resolver", True, {"GET"}),
+    ("/v1/canarios", "resolver", True, {"GET", "POST"}),
     ("/v1/sources", "crawler", True, {"GET"}),
 ]
 _SEM_REPASSE = {"host", "content-length", "x-tenant-id", "x-api-key-id", "x-papel", "x-real-ip", "x-forwarded-for", "transfer-encoding", "content-encoding"}

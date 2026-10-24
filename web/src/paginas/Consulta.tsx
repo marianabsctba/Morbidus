@@ -190,6 +190,11 @@ function Laudo({ r }: { r: ConsultaOut }) {
         <Medidor valor={r.score} />
       </div>
 
+      {r.alerta_coletivo && (
+        <div className="alerta coletivo" role="alert">
+          <strong>Identidade quente.</strong> {r.alerta_coletivo.mensagem}
+        </div>
+      )}
       {r.aviso && <div className="alerta brando">{r.aviso}</div>}
       {r.fontes_indisponiveis.length > 0 && (
         <div className="alerta brando">

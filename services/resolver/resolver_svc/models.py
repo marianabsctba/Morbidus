@@ -24,6 +24,8 @@ class DeathRecord(Base):
     cidade: Mapped[str] = mapped_column(String(120))
     uf: Mapped[str] = mapped_column(String(2), index=True)
     fontes: Mapped[list] = mapped_column(JSON, default=list)
+    # Pessoa fictícia plantada para detectar vazamento (resolver_svc/canarios.py).
+    canario: Mapped[bool] = mapped_column(default=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

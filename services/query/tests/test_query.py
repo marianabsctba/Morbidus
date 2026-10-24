@@ -36,12 +36,26 @@ def _registro(nome="Fulano de Tal da Silva", cidade="Curitiba", ano_nascimento=1
     )
 
 
+def _audit(calor):
+    """Audit simulado: devolve o calor pedido; None simula o serviço fora do ar."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calor is None:
+            return httpx.Response(503)
+        chaves = request.url.params.get_list("chave")
+        return httpx.Response(200, json={c: calor.get(c, 0) for c in chaves})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://audit")
+
+
 @pytest.fixture
 def ambiente():
     bus, index = InMemoryBus(), InMemoryDeathIndex()
     index.upsert(_registro())
     provider = httpx.AsyncClient(transport=httpx.MockTransport(_provider), base_url="http://provider")
-    with TestClient(build_app(QuerySettings(), bus=bus, index=index, provider_client=provider)) as client:
+    with TestClient(
+        build_app(QuerySettings(), bus=bus, index=index, provider_client=provider, audit_client=_audit({}))
+    ) as client:
         yield client, bus
 
 
@@ -116,7 +130,10 @@ def test_provider_fora_do_ar_nao_derruba_consulta():
         return httpx.Response(503)
 
     provider = httpx.AsyncClient(transport=httpx.MockTransport(quebrado), base_url="http://provider")
-    with TestClient(build_app(QuerySettings(), bus=InMemoryBus(), index=InMemoryDeathIndex(), provider_client=provider)) as client:
+    app = build_app(
+        QuerySettings(), bus=InMemoryBus(), index=InMemoryDeathIndex(), provider_client=provider, audit_client=_audit({})
+    )
+    with TestClient(app) as client:
         resp = client.post("/v1/consultas", json={"cpf": CPF_FALECIDO, "finalidade": "onboarding"}, headers=TENANT).json()
     assert resp["status"] == "sem_registro"
     assert resp["fontes_indisponiveis"] == ["provider-svc"]
@@ -141,3 +158,41 @@ def test_registra_ip_e_user_agent_de_quem_consultou(ambiente):
     # IP inválido no cabeçalho não é gravado como se fosse IP.
     client.post("/v1/consultas", json={"cpf": CPF_REGULAR, "finalidade": "onboarding"}, headers={**TENANT, "X-Real-Ip": "<script>"})
     assert bus.published[-1][1]["ip_origem"] == "testclient"
+
+
+
+def _app_com(index, bus, calor):
+    provider = httpx.AsyncClient(transport=httpx.MockTransport(_provider), base_url="http://provider")
+    return build_app(QuerySettings(), bus=bus, index=index, provider_client=provider, audit_client=_audit(calor))
+
+
+def test_identidade_quente_aparece_no_laudo_e_no_evento():
+    bus, index = InMemoryBus(), InMemoryDeathIndex()
+    index.upsert(_registro())
+    with TestClient(_app_com(index, bus, {"registro:r1": 2})) as client:
+        corpo = {"nome": "Fulano de Tal da Silva", "uf": "PR", "cidade": "Curitiba", "finalidade": "prevencao_fraude"}
+        resp = client.post("/v1/consultas", json=corpo, headers=TENANT).json()
+    assert resp["alerta_coletivo"]["outras_instituicoes"] == 2
+    evento = bus.published[-1][1]
+    assert evento["identidades"] == ["registro:r1"] and evento["canario"] is False
+
+
+def test_auditoria_fora_do_ar_nao_derruba_consulta():
+    bus, index = InMemoryBus(), InMemoryDeathIndex()
+    with TestClient(_app_com(index, bus, None)) as client:
+        resp = client.post("/v1/consultas", json={"cpf": CPF_FALECIDO, "finalidade": "onboarding"}, headers=TENANT).json()
+    assert resp["status"] == "obito_confirmado" and resp["alerta_coletivo"] is None
+    assert bus.published[-1][1]["identidades"][0].startswith("cpf:")
+
+
+def test_canario_marca_o_evento_sem_aparecer_no_laudo():
+    bus, index = InMemoryBus(), InMemoryDeathIndex()
+    canario = _registro(nome="Gumercindo Belarmino Quaresma")
+    canario.canario = True
+    index.upsert(canario)
+    with TestClient(_app_com(index, bus, {})) as client:
+        corpo = {"nome": "Gumercindo Belarmino Quaresma", "uf": "PR", "cidade": "Curitiba", "finalidade": "onboarding"}
+        resp = client.post("/v1/consultas", json=corpo, headers=TENANT).json()
+    # Para quem consulta, parece um resultado comum.
+    assert resp["status"] == "sinal_forte" and "canario" not in str(resp)
+    assert bus.published[-1][1]["canario"] is True

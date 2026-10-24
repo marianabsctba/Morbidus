@@ -57,6 +57,7 @@ class OpenSearchDeathIndex(DeathIndex):
             "cidade": {"type": "keyword"},
             "uf": {"type": "keyword"},
             "fontes": {"type": "keyword"},
+            "canario": {"type": "boolean"},
         }
     }
 

@@ -26,8 +26,12 @@ def test_obituario_coletado_vira_sinal_e_fica_auditado():
     )
     crawler = TestClient(build_crawler(CrawlerSettings(enabled_spiders="fixture"), bus=bus))
     resolver = TestClient(build_resolver(ResolverSettings(database_url="sqlite:///:memory:"), bus=bus, index=index))
-    query = TestClient(build_query(QuerySettings(), bus=bus, index=index, provider_client=provider))
-    audit = TestClient(build_audit(AuditSettings(database_url="sqlite:///:memory:"), bus=bus))
+    audit_app = build_audit(AuditSettings(database_url="sqlite:///:memory:"), bus=bus)
+    audit_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=audit_app), base_url="http://audit")
+    query = TestClient(
+        build_query(QuerySettings(), bus=bus, index=index, provider_client=provider, audit_client=audit_http)
+    )
+    audit = TestClient(audit_app)
 
     with crawler, resolver, query, audit:
         coleta = crawler.post("/v1/sources/fixture/run").json()
@@ -57,3 +61,10 @@ def test_obituario_coletado_vira_sinal_e_fica_auditado():
 
         trilha = audit.get("/v1/auditoria", headers=TENANT).json()
         assert {e["status"] for e in trilha} == {"sinal_forte", "obito_confirmado"}
+
+        # Mais duas instituições batendo na mesma pessoa: cada uma vê quantas outras já bateram.
+        busca = {"nome": "Beltrana Fictícia Souza", "cidade": "Curitiba", "uf": "PR", "finalidade": "onboarding"}
+        segunda = query.post("/v1/consultas", json=busca, headers={"X-Tenant-Id": "coop-2"}).json()
+        assert segunda["alerta_coletivo"] is None  # só 1 outra instituição: abaixo do limite
+        terceira = query.post("/v1/consultas", json=busca, headers={"X-Tenant-Id": "coop-3"}).json()
+        assert terceira["alerta_coletivo"]["outras_instituicoes"] == 2

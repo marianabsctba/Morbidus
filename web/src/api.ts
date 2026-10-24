@@ -45,6 +45,15 @@ export interface ConsultaOut {
   evidencias: Evidencia[];
   fontes_indisponiveis: string[];
   aviso: string | null;
+  alerta_coletivo: { outras_instituicoes: number; janela_dias: number; mensagem: string } | null;
+}
+
+export interface Canario {
+  nome: string;
+  cidade: string;
+  uf: string;
+  data_nascimento: string | null;
+  data_falecimento: string | null;
 }
 
 export interface AuditEntry {
@@ -116,7 +125,7 @@ export interface Alerta {
   descricao: string;
   evidencias: Record<string, number>;
   criado_em: string;
-  status: "aberto" | "resolvido";
+  status: "aberto" | "resolvido" | "confirmado";
   resolvido_em: string | null;
 }
 
@@ -179,6 +188,8 @@ export const api = {
   estatisticas: () => chamar<Estatisticas>("/v1/estatisticas"),
   // Só administradores.
   fontes: () => chamar<Fonte[]>("/v1/sources"),
+  canarios: () => chamar<Canario[]>("/v1/canarios"),
+  plantarCanarios: (quantidade: number) => chamar<Canario[]>("/v1/canarios", json("POST", { quantidade })),
   usuarios: () => chamar<UsuarioAdmin[]>("/v1/conta/admin/usuarios"),
   alterarUsuario: (id: string, body: UsuarioAdminIn) =>
     chamar<UsuarioAdmin>(`/v1/conta/admin/usuarios/${id}`, json("PATCH", body)),
@@ -188,7 +199,7 @@ export const api = {
     if (filtros.ip) q.set("ip", filtros.ip);
     return chamar<AuditEntryGeral[]>(`/v1/auditoria/geral?${q}`);
   },
-  alertas: (status: "aberto" | "resolvido" = "aberto") => chamar<Alerta[]>(`/v1/alertas?status=${status}`),
-  alterarAlerta: (id: string, status: "aberto" | "resolvido") =>
+  alertas: (status: Alerta["status"] = "aberto") => chamar<Alerta[]>(`/v1/alertas?status=${status}`),
+  alterarAlerta: (id: string, status: Alerta["status"]) =>
     chamar<Alerta>(`/v1/alertas/${id}`, json("PATCH", { status })),
 };

@@ -160,7 +160,7 @@ services:
       opensearch: { condition: service_healthy }
     labels:
       - traefik.enable=true
-      - traefik.http.routers.estatisticas.rule=Path(`/v1/estatisticas`) && Method(`GET`)
+      - traefik.http.routers.estatisticas.rule=(Path(`/v1/estatisticas`) && Method(`GET`)) || PathPrefix(`/v1/canarios`)
       - traefik.http.routers.estatisticas.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.routers.estatisticas.middlewares=apikey@docker,ratelimit@docker
       - traefik.http.services.resolver.loadbalancer.server.port=8000
@@ -211,9 +211,14 @@ services:
       redpanda: { condition: service_healthy }
     labels:
       - traefik.enable=true
-      - traefik.http.routers.auditoria.rule=PathPrefix(`/v1/auditoria`) || PathPrefix(`/v1/alertas`)
+      - traefik.http.routers.auditoria.rule=PathPrefix(`/v1/auditoria`) || PathPrefix(`/v1/alertas`) || PathPrefix(`/v1/cti`)
       - traefik.http.routers.auditoria.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.routers.auditoria.middlewares=apikey@docker,ratelimit@docker
+      # Feed TAXII: autenticação própria por token (CTI_TAXII_TOKENS), sem sessão do painel.
+      - traefik.http.routers.taxii.rule=PathPrefix(`/taxii2`)
+      - traefik.http.routers.taxii.entrypoints=${PUBLIC_ENTRYPOINT:-web}
+      - traefik.http.routers.taxii.middlewares=ratelimit@docker
+      - traefik.http.routers.taxii.service=audit
       - traefik.http.services.audit.loadbalancer.server.port=8000
 
   prometheus:

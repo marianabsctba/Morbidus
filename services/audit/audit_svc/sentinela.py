@@ -12,7 +12,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from audit_svc.config import AuditSettings
-from audit_svc.models import Alerta, AuditEntry
+from audit_svc.models import Alerta, AuditEntry, IdentidadeConsultada
 
 ACERTOS = (QueryStatus.OBITO_CONFIRMADO.value, QueryStatus.SINAL_FORTE.value)
 
@@ -22,6 +22,8 @@ ROTULOS = {
     "obitos_recentes": "Caça a óbitos recentes",
     "taxa_acerto": "Taxa de acerto anômala",
     "ip_multicontas": "Várias contas no mesmo IP",
+    "identidade_quente": "Identidade quente",
+    "canario": "Identidade-canário consultada",
 }
 
 
@@ -33,6 +35,7 @@ class Achado:
     evidencias: dict
     tenant_id: str | None = None
     ip: str | None = None
+    chave: str | None = None
 
 
 def _aware(dt: datetime) -> datetime:
@@ -47,6 +50,36 @@ def _regras(db: Session, ev: QueryPerformed, cfg: AuditSettings) -> list[Achado]
         return AuditEntry.ocorrido_em >= agora - timedelta(**delta)
 
     achados = []
+
+    if ev.canario:
+        achados.append(
+            Achado(
+                "canario",
+                "alta",
+                "Consulta bateu numa identidade-canário: o nome só existe no MORBiDus, então veio de um vazamento",
+                {"consulta": ev.query_id},
+                ev.tenant_id,
+                ev.ip_origem,
+            )
+        )
+
+    for chave in ev.identidades:
+        n = db.scalar(
+            select(func.count(func.distinct(IdentidadeConsultada.tenant_id))).where(
+                IdentidadeConsultada.chave == chave,
+                IdentidadeConsultada.ocorrido_em >= agora - timedelta(days=cfg.calor_janela_dias),
+            )
+        )
+        if n >= cfg.calor_instituicoes:
+            achados.append(
+                Achado(
+                    "identidade_quente",
+                    "alta",
+                    f"A mesma identidade de pessoa falecida foi consultada por {n} instituições em {cfg.calor_janela_dias} dias",
+                    {"instituicoes": n},
+                    chave=chave,
+                )
+            )
 
     n = db.scalar(select(func.count()).select_from(AuditEntry).where(da_conta, desde(minutes=10)))
     if n >= cfg.rajada_limite:
@@ -124,7 +157,12 @@ def avaliar(db: Session, ev: QueryPerformed, cfg: AuditSettings) -> list[Alerta]
     novos = []
     limite_repeticao = _aware(ev.occurred_at) - timedelta(hours=cfg.alerta_silencio_horas)
     for achado in _regras(db, ev, cfg):
-        alvo = (Alerta.ip == achado.ip) if achado.ip else (Alerta.tenant_id == achado.tenant_id)
+        if achado.chave:
+            alvo = Alerta.chave == achado.chave
+        elif achado.tenant_id:
+            alvo = Alerta.tenant_id == achado.tenant_id
+        else:
+            alvo = Alerta.ip == achado.ip
         repetido = db.scalar(
             select(Alerta.id).where(
                 Alerta.regra == achado.regra, alvo, Alerta.status == "aberto", Alerta.criado_em >= limite_repeticao
@@ -140,6 +178,7 @@ def avaliar(db: Session, ev: QueryPerformed, cfg: AuditSettings) -> list[Alerta]
             descricao=achado.descricao,
             evidencias=achado.evidencias,
             criado_em=ev.occurred_at,
+            chave=achado.chave,
         )
         db.add(alerta)
         novos.append(alerta)

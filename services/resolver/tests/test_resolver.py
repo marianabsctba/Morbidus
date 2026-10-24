@@ -92,3 +92,44 @@ async def test_evento_repetido_e_ignorado(ambiente):
     await bus.publish(Topics.OBITUARY_RAW, evento)
     normalizados = [t for t, _ in bus.published if t == Topics.DEATH_RECORD_NORMALIZED]
     assert len(normalizados) == 1
+
+
+
+def test_canarios_ficam_fora_das_estatisticas_e_so_admin_ve(ambiente):
+    client, _, index = ambiente
+    admin = {"X-Tenant-Id": "adm", "X-Papel": "admin"}
+    assert client.post("/v1/canarios", json={"quantidade": 3}, headers={"X-Tenant-Id": "t1"}).status_code == 403
+    plantados = client.post("/v1/canarios", json={"quantidade": 3}, headers=admin).json()
+    assert len(plantados) == 3 and len({c["nome"] for c in plantados}) == 3
+    assert all(doc["canario"] for doc in index.docs.values())
+    assert client.get("/v1/estatisticas").json()["total"] == 0
+    assert [c["nome"] for c in client.get("/v1/canarios", headers=admin).json()]
+    assert client.get("/v1/canarios", headers={"X-Tenant-Id": "t1"}).status_code == 403
+
+
+async def test_canario_nao_usa_nome_parecido_com_pessoa_real(ambiente):
+    from resolver_svc import canarios
+
+    client, bus, index = ambiente
+    await bus.publish(Topics.OBITUARY_RAW, _raw("a", "Gumercindo Belarmino Quintanilha", "https://a/x"))
+    # Sorteio viciado: a primeira combinação colide com a pessoa real e deve ser descartada.
+    import random as _r
+
+    class Viciado(_r.Random):
+        def __init__(self):
+            super().__init__(7)
+            self.vez = 0
+
+        def choice(self, seq):
+            self.vez += 1
+            if self.vez <= 3:
+                return {"Gumercindo", "Belarmino", "Quintanilha"}.intersection(seq).pop()
+            return super().choice(seq)
+
+    original = canarios.random.SystemRandom
+    canarios.random.SystemRandom = Viciado
+    try:
+        plantados = client.post("/v1/canarios", json={"quantidade": 1}, headers={"X-Tenant-Id": "adm", "X-Papel": "admin"}).json()
+    finally:
+        canarios.random.SystemRandom = original
+    assert plantados[0]["nome"] != "GUMERCINDO BELARMINO QUINTANILHA"

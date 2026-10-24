@@ -37,6 +37,7 @@ def to_event(rec: DeathRecord) -> DeathRecordNormalized:
         cidade=rec.cidade,
         uf=rec.uf,
         fontes=list(rec.fontes),
+        canario=bool(rec.canario),
     )
 
 

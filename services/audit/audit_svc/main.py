@@ -2,21 +2,26 @@
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import Depends, HTTPException, Query
+import base64
+import hmac
+
+from fastapi import Depends, Header, HTTPException, Query
+from fastapi.responses import JSONResponse
 from morbidus_common.bus import EventBus, make_bus
 from morbidus_common.db import make_engine, utcnow
 from morbidus_common.events import QueryPerformed, Topics
 from morbidus_common.logging import setup_logging
 from morbidus_common.web import TenantContext, create_app, require_admin, require_tenant
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from audit_svc.config import AuditSettings
-from audit_svc.alertas import notificar
-from audit_svc.models import Alerta, AuditEntry, setup_schema
+from audit_svc import cti
+from audit_svc.alertas import avisar_instituicoes, notificar
+from audit_svc.models import Alerta, AuditEntry, IdentidadeConsultada, setup_schema
 from audit_svc.sentinela import ROTULOS, avaliar
 
 
@@ -53,7 +58,8 @@ class AlertaOut(BaseModel):
 
 
 class AlertaIn(BaseModel):
-    status: str = Field(pattern="^(aberto|resolvido)$")
+    # "confirmado" = abuso confirmado pela administração; só esses vão para o feed de CTI.
+    status: str = Field(pattern="^(aberto|resolvido|confirmado)$")
 
 
 def _alerta_out(a: Alerta) -> AlertaOut:
@@ -102,6 +108,12 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
                     dias_desde_obito=event.dias_desde_obito,
                 )
             )
+            for chave in event.identidades:
+                db.add(
+                    IdentidadeConsultada(
+                        query_id=event.query_id, chave=chave, tenant_id=event.tenant_id, ocorrido_em=event.occurred_at
+                    )
+                )
             db.flush()
             novos = avaliar(db, event, settings)
             db.commit()
@@ -111,6 +123,20 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
         novos = await asyncio.to_thread(_store, QueryPerformed.model_validate(payload))
         if novos:
             await asyncio.to_thread(notificar, settings, novos)
+            for alerta in novos:
+                if alerta.regra == "identidade_quente":
+                    consultas = await asyncio.to_thread(_consultas_da_chave, alerta.chave, alerta.criado_em)
+                    await asyncio.to_thread(avisar_instituicoes, settings, consultas)
+
+    def _consultas_da_chave(chave: str, ate: datetime) -> list[tuple[str, str, datetime]]:
+        inicio = ate - timedelta(days=settings.calor_janela_dias)
+        with sessions() as db:
+            linhas = db.execute(
+                select(IdentidadeConsultada.tenant_id, IdentidadeConsultada.query_id, IdentidadeConsultada.ocorrido_em)
+                .where(IdentidadeConsultada.chave == chave, IdentidadeConsultada.ocorrido_em >= inicio)
+                .order_by(IdentidadeConsultada.ocorrido_em)
+            ).all()
+        return [tuple(linha) for linha in linhas]
 
     bus.subscribe(Topics.QUERY_PERFORMED, handle)
 
@@ -161,10 +187,27 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
             stmt = stmt.order_by(AuditEntry.ocorrido_em.desc()).limit(limit).offset(offset)
             return db.scalars(stmt).all()
 
+    @app.get("/interno/calor", include_in_schema=False)
+    def calor(tenant: str, chave: list[str] = Query(default=[])) -> dict[str, int]:
+        """Para o query-svc: quantas OUTRAS instituições bateram em cada identidade na janela.
+        Rota interna: o gateway não a expõe."""
+        inicio = utcnow() - timedelta(days=settings.calor_janela_dias)
+        with sessions() as db:
+            return {
+                c: db.scalar(
+                    select(func.count(func.distinct(IdentidadeConsultada.tenant_id))).where(
+                        IdentidadeConsultada.chave == c,
+                        IdentidadeConsultada.tenant_id != tenant,
+                        IdentidadeConsultada.ocorrido_em >= inicio,
+                    )
+                )
+                for c in chave[:20]
+            }
+
     @app.get("/v1/alertas", response_model=list[AlertaOut])
     def listar_alertas(
         _: TenantContext = Depends(require_admin),
-        status: str | None = Query("aberto", pattern="^(aberto|resolvido)$"),
+        status: str | None = Query("aberto", pattern="^(aberto|resolvido|confirmado)$"),
         limit: int = Query(100, ge=1, le=500),
     ):
         """Suspeitas de abuso abertas pelo detector. Só administradores."""
@@ -181,8 +224,79 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
             if alerta is None:
                 raise HTTPException(status_code=404, detail="alerta não encontrado")
             alerta.status = body.status
-            alerta.resolvido_em = utcnow() if body.status == "resolvido" else None
+            alerta.resolvido_em = utcnow() if body.status in ("resolvido", "confirmado") else None
             db.commit()
             return _alerta_out(alerta)
+
+    # ---------- Inteligência de ameaças (STIX 2.1 / TAXII 2.1) ----------
+
+    @app.get("/v1/cti/stix")
+    def baixar_stix(_: TenantContext = Depends(require_admin)):
+        """Pacote STIX 2.1 com os IPs de alertas confirmados. Só administradoras."""
+        with sessions() as db:
+            return JSONResponse(
+                cti.pacote(db),
+                media_type=cti.MEDIA_STIX,
+                headers={"Content-Disposition": 'attachment; filename="morbidus-cti.json"'},
+            )
+
+    tokens_taxii = [t.strip() for t in settings.cti_taxii_tokens.split(",") if t.strip()]
+
+    def autorizar_taxii(authorization: str | None = Header(default=None)) -> None:
+        """Aceita Bearer <token> ou Basic com o token como senha (formato de MISP e OpenCTI)."""
+        if not tokens_taxii:
+            raise HTTPException(status_code=404, detail="feed TAXII desativado")
+        enviado = ""
+        if authorization and authorization.lower().startswith("bearer "):
+            enviado = authorization[7:].strip()
+        elif authorization and authorization.lower().startswith("basic "):
+            try:
+                enviado = base64.b64decode(authorization[6:]).decode().split(":", 1)[-1]
+            except ValueError:
+                enviado = ""
+        if not any(hmac.compare_digest(enviado, t) for t in tokens_taxii):
+            raise HTTPException(
+                status_code=401, detail="token inválido", headers={"WWW-Authenticate": 'Bearer realm="taxii"'}
+            )
+
+    def _taxii(dados: dict) -> JSONResponse:
+        return JSONResponse(dados, media_type=cti.MEDIA_TAXII)
+
+    raiz = f"{settings.public_url.rstrip('/')}/taxii2/morbidus/"
+    colecao = {
+        "id": cti.COLECAO,
+        "title": "MORBiDus: IPs com abuso confirmado",
+        "description": "Origens de consultas abusivas a identidades de pessoas falecidas. TLP:AMBER.",
+        "can_read": True,
+        "can_write": False,
+        "media_types": [cti.MEDIA_STIX],
+    }
+    taxii = [Depends(autorizar_taxii)]
+
+    @app.get("/taxii2/", dependencies=taxii, include_in_schema=False)
+    def taxii_descoberta():
+        return _taxii({"title": "MORBiDus TAXII", "default": raiz, "api_roots": [raiz]})
+
+    @app.get("/taxii2/morbidus/", dependencies=taxii, include_in_schema=False)
+    def taxii_raiz():
+        return _taxii({"title": "MORBiDus", "versions": [cti.MEDIA_TAXII], "max_content_length": 10_485_760})
+
+    @app.get("/taxii2/morbidus/collections/", dependencies=taxii, include_in_schema=False)
+    def taxii_colecoes():
+        return _taxii({"collections": [colecao]})
+
+    @app.get("/taxii2/morbidus/collections/{colecao_id}/", dependencies=taxii, include_in_schema=False)
+    def taxii_colecao(colecao_id: str):
+        if colecao_id != cti.COLECAO:
+            raise HTTPException(status_code=404, detail="coleção não encontrada")
+        return _taxii(colecao)
+
+    @app.get("/taxii2/morbidus/collections/{colecao_id}/objects/", dependencies=taxii, include_in_schema=False)
+    def taxii_objetos(colecao_id: str, added_after: datetime | None = None):
+        if colecao_id != cti.COLECAO:
+            raise HTTPException(status_code=404, detail="coleção não encontrada")
+        with sessions() as db:
+            objetos = cti.produtor_e_marcacao() + cti.objetos(db, depois_de=added_after)
+        return _taxii({"more": False, "objects": objetos})
 
     return app
