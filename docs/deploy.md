@@ -96,6 +96,7 @@ A auditoria é append-only: um gatilho no Postgres bloqueia UPDATE e DELETE. A �
 - [ ] `ENABLED_PROVIDERS` vazio
 - [ ] HTTPS funcionando e HTTP redirecionando
 - [ ] `/v1/admin` respondendo 403 fora dos IPs liberados
-- [x] Backup diário dos bancos (`scripts/backup.sh`) e cópia para fora do servidor
+- [x] Backup diário dos bancos (`scripts/backup.sh`)
+- [ ] Cópia dos backups para fora do servidor, cifrada
 - [x] Política de privacidade e termos de uso em `/privacidade`, com aceite registrado e formulário para o encarregado
 - [ ] Encarregado (DPO) definido para atender pedidos de titulares
