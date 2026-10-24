@@ -44,7 +44,7 @@ Legenda: ✅ spider ativo · 🟡 fonte existe, spider pendente · ⛔ fonte blo
 | Aracaju | SE | ❌ | | |
 | Palmas | TO | ✅ | `palmas-pax` | ~3.900 desde 2021 |
 
-**20 spiders ativos em 16 capitais, mais Campina Grande (PB).** Nenhuma prefeitura das 27 capitais publica lista de sepultados em formato aberto e coletável, exceto Curitiba. Campo Grande publica, mas bloqueia no `robots.txt`.
+**19 spiders ativos em 16 capitais, mais Campina Grande (PB).** Nenhuma prefeitura das 27 capitais publica lista de sepultados em formato aberto e coletável, exceto Curitiba. Campo Grande publica, mas bloqueia no `robots.txt`.
 
 ## Detalhe das fontes ativas
 
