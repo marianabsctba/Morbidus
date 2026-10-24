@@ -45,6 +45,24 @@ def test_file_raw_store_grava_e_bloqueia_path_traversal(tmp_path):
         store.put("../fora.html", b"x")
 
 
+def test_file_raw_store_apaga_paginas_antigas(tmp_path):
+    import os
+    import time
+
+    from crawler_svc.rawstore import FileRawStore
+
+    store = FileRawStore(str(tmp_path))
+    store.put("fonte/2026/08/01/velha.html", b"velha")
+    store.put("fonte/2026/10/24/nova.html", b"nova")
+    velha = tmp_path / "fonte/2026/08/01/velha.html"
+    quarenta_dias = time.time() - 40 * 86400
+    os.utime(velha, (quarenta_dias, quarenta_dias))
+
+    assert store.purge(30) == 1
+    assert not velha.exists() and not (tmp_path / "fonte/2026/08").exists()
+    assert (tmp_path / "fonte/2026/10/24/nova.html").exists()
+
+
 async def test_fetcher_respeita_robots():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":

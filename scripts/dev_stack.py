@@ -52,7 +52,9 @@ bus, index = InMemoryBus(), InMemoryDeathIndex()
 provider = build_provider(ProviderSettings())
 apps = {
     "identity": build_identity(
-        IdentitySettings(database_url=f"sqlite:///{RAIZ / 'dev_identity.db'}", admin_token=ADMIN_TOKEN)
+        IdentitySettings(
+            database_url=f"sqlite:///{RAIZ / 'dev_identity.db'}", admin_token=ADMIN_TOKEN, smtp_host=""
+        )
     ),
     "query": build_query(
         QuerySettings(),
@@ -72,6 +74,8 @@ clients = {
 # (prefixo, serviço, exige API key, métodos permitidos). Mesmas regras do docker-compose.
 ROTAS = [
     ("/v1/admin", "identity", False, None),
+    ("/v1/conta", "identity", False, None),
+    ("/v1/sessao", "identity", False, None),
     ("/v1/consultas", "query", True, {"POST"}),
     ("/v1/auditoria", "audit", True, {"GET"}),
     ("/v1/estatisticas", "resolver", True, {"GET"}),
@@ -90,7 +94,12 @@ async def gateway(request: Request) -> Response:
         return JSONResponse({"detail": "método não permitido"}, status_code=405)
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _SEM_REPASSE}
     if exige_chave:
-        auth = await clients["identity"].get("/auth/verify", headers={"X-API-Key": request.headers.get("x-api-key", "")})
+        # Mesmo contrato do forwardAuth do Traefik: credenciais + método e URI originais.
+        auth_headers = {"X-Forwarded-Method": request.method, "X-Forwarded-Uri": caminho}
+        for nome in ("x-api-key", "cookie"):
+            if nome in request.headers:
+                auth_headers[nome] = request.headers[nome]
+        auth = await clients["identity"].get("/auth/verify", headers=auth_headers)
         if auth.status_code != 200:
             return JSONResponse(auth.json(), status_code=auth.status_code)
         headers["X-Tenant-Id"] = auth.headers["x-tenant-id"]
@@ -98,11 +107,11 @@ async def gateway(request: Request) -> Response:
     resp = await clients[servico].request(
         request.method, caminho, params=request.query_params, headers=headers, content=await request.body()
     )
-    return Response(
-        resp.content,
-        status_code=resp.status_code,
-        headers={k: v for k, v in resp.headers.items() if k.lower() not in _SEM_REPASSE},
-    )
+    saida = Response(resp.content, status_code=resp.status_code)
+    for k, v in resp.headers.multi_items():
+        if k.lower() not in _SEM_REPASSE:
+            saida.headers.append(k, v)
+    return saida
 
 
 def _web(caminho: str) -> Response:

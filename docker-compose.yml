@@ -98,12 +98,24 @@ services:
       - traefik.http.routers.admin.rule=PathPrefix(`/v1/admin`)
       - traefik.http.routers.admin.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.services.identity.loadbalancer.server.port=8000
-      # Middlewares usados pelas rotas de clientes (query e audit).
+      # Cadastro, login e "Minha conta": públicos, com limite apertado por IP.
+      - traefik.http.routers.contas.rule=PathPrefix(`/v1/conta`) || PathPrefix(`/v1/sessao`)
+      - traefik.http.routers.contas.entrypoints=${PUBLIC_ENTRYPOINT:-web}
+      - traefik.http.routers.contas.middlewares=ratelimit-contas@docker
+      - traefik.http.routers.contas.service=identity
+      - traefik.http.routers.admin.service=identity
+      # Middlewares usados pelas rotas de clientes (query, audit, estatísticas, fontes).
+      # O forwardAuth aceita API key ou sessão do painel e aplica a cota diária.
       - traefik.http.middlewares.apikey.forwardauth.address=http://identity:8000/auth/verify
       - traefik.http.middlewares.apikey.forwardauth.authResponseHeaders=X-Tenant-Id,X-Api-Key-Id
+      # Limite por IP do cliente. Atrás do nginx do host, o IP real vem no X-Forwarded-For.
       - traefik.http.middlewares.ratelimit.ratelimit.average=20
       - traefik.http.middlewares.ratelimit.ratelimit.burst=40
-      - traefik.http.middlewares.ratelimit.ratelimit.sourcecriterion.requestheadername=X-API-Key
+      - traefik.http.middlewares.ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1
+      - traefik.http.middlewares.ratelimit-contas.ratelimit.average=10
+      - traefik.http.middlewares.ratelimit-contas.ratelimit.period=1m
+      - traefik.http.middlewares.ratelimit-contas.ratelimit.burst=10
+      - traefik.http.middlewares.ratelimit-contas.ratelimit.sourcecriterion.ipstrategy.depth=1
 
   provider:
     <<: *service

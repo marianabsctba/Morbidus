@@ -33,7 +33,7 @@ export default function Auditoria({ tratarErro }: { tratarErro: (e: unknown) => 
     <>
       <div className="titulo-pagina">
         <h1>Auditoria</h1>
-        <p>Todas as consultas feitas com as chaves desta organização. O registro não pode ser alterado.</p>
+        <p>Todas as consultas feitas pela sua conta, no painel ou por API key. O registro não pode ser alterado.</p>
       </div>
       {erro && <div className="alerta">{erro}</div>}
       <div className="painel">
@@ -48,6 +48,7 @@ export default function Auditoria({ tratarErro }: { tratarErro: (e: unknown) => 
                   <th>Quando</th>
                   <th>Consultado</th>
                   <th>Finalidade</th>
+                  <th>Origem</th>
                   <th>Resultado</th>
                   <th className="num">Score</th>
                 </tr>
@@ -61,6 +62,9 @@ export default function Auditoria({ tratarErro }: { tratarErro: (e: unknown) => 
                       {a.nome_consultado && <div>{a.nome_consultado}</div>}
                     </td>
                     <td>{FINALIDADES[a.finalidade] ?? a.finalidade}</td>
+                    <td>
+                      <span className="etiqueta">{a.api_key_id ? "API" : "Painel"}</span>
+                    </td>
                     <td>
                       <EtiquetaStatus status={a.status} />
                     </td>

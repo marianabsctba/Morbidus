@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
-import { getKey, NaoAutorizado, setKey } from "./api";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { api, Conta as ContaT, NaoAutorizado } from "./api";
 import { Atmosfera, Marca } from "./componentes";
 import Auditoria from "./paginas/Auditoria";
 import Cobertura from "./paginas/Cobertura";
 import Consulta from "./paginas/Consulta";
-import Login from "./paginas/Login";
+import Conta from "./paginas/Conta";
+import Entrada from "./paginas/Entrada";
+import Verificar from "./paginas/Verificar";
 
 const FX = "morbidus.fx";
 
@@ -18,8 +20,10 @@ function lerFx(): boolean {
 }
 
 export default function App() {
-  const [chave, setChave] = useState<string | null>(getKey());
+  const [conta, setConta] = useState<ContaT | null | undefined>(undefined);
   const [fx, setFx] = useState(lerFx);
+  const local = useLocation();
+  const navegar = useNavigate();
 
   useEffect(() => {
     document.documentElement.dataset.fx = fx ? "on" : "off";
@@ -30,36 +34,59 @@ export default function App() {
     }
   }, [fx]);
 
-  const sair = useCallback(() => {
-    setKey(null);
-    setChave(null);
+  const atualizarConta = useCallback(() => {
+    api
+      .conta()
+      .then(setConta)
+      .catch(() => setConta(null));
   }, []);
 
-  // Qualquer página que receba 401/403 derruba a sessão.
-  const tratarErro = useCallback(
-    (e: unknown): string => {
-      if (e instanceof NaoAutorizado) {
-        sair();
-        return e.message;
-      }
-      return e instanceof Error ? e.message : String(e);
-    },
-    [sair],
-  );
+  useEffect(atualizarConta, [atualizarConta]);
 
-  if (!chave) {
+  const sair = useCallback(() => {
+    api.sair().catch(() => undefined);
+    setConta(null);
+  }, []);
+
+  // 401 em qualquer página derruba a sessão; o resto vira mensagem.
+  const tratarErro = useCallback((e: unknown): string => {
+    if (e instanceof NaoAutorizado) {
+      setConta(null);
+      return e.message;
+    }
+    return e instanceof Error ? e.message : String(e);
+  }, []);
+
+  if (local.pathname === "/verificar") {
     return (
       <>
         <Atmosfera />
-        <Login
-          aoEntrar={(k) => {
-            setKey(k);
-            setChave(k);
-          }}
-        />
+        <Verificar aoConcluir={() => navegar("/", { replace: true })} />
       </>
     );
   }
+
+  if (conta === undefined) {
+    return (
+      <>
+        <Atmosfera />
+        <main className="login">
+          <p className="carregando">ABRINDO A CRIPTA</p>
+        </main>
+      </>
+    );
+  }
+
+  if (conta === null) {
+    return (
+      <>
+        <Atmosfera />
+        <Entrada aoEntrar={atualizarConta} />
+      </>
+    );
+  }
+
+  const ativo = ({ isActive }: { isActive: boolean }) => (isActive ? "ativo" : "");
 
   return (
     <>
@@ -68,17 +95,24 @@ export default function App() {
         <header className="topo">
           <Marca />
           <nav aria-label="Principal">
-            <NavLink to="/consulta" className={({ isActive }) => (isActive ? "ativo" : "")}>
+            <NavLink to="/consulta" className={ativo}>
               Consulta
             </NavLink>
-            <NavLink to="/auditoria" className={({ isActive }) => (isActive ? "ativo" : "")}>
+            <NavLink to="/auditoria" className={ativo}>
               Auditoria
             </NavLink>
-            <NavLink to="/cobertura" className={({ isActive }) => (isActive ? "ativo" : "")}>
+            <NavLink to="/cobertura" className={ativo}>
               Cobertura
+            </NavLink>
+            <NavLink to="/conta" className={ativo}>
+              Minha conta
             </NavLink>
           </nav>
           <div className="direita">
+            <span className="uso-topo" title="Consultas feitas hoje">
+              {conta.consultas_hoje}
+              {conta.limite_diario > 0 ? `/${conta.limite_diario}` : ""} hoje
+            </span>
             <button
               className="botao fantasma"
               aria-pressed={fx}
@@ -94,9 +128,16 @@ export default function App() {
         </header>
         <main className="conteudo">
           <Routes>
-            <Route path="/consulta" element={<Consulta tratarErro={tratarErro} />} />
+            <Route
+              path="/consulta"
+              element={<Consulta tratarErro={tratarErro} aoConsultar={atualizarConta} />}
+            />
             <Route path="/auditoria" element={<Auditoria tratarErro={tratarErro} />} />
             <Route path="/cobertura" element={<Cobertura tratarErro={tratarErro} />} />
+            <Route
+              path="/conta"
+              element={<Conta conta={conta} atualizar={atualizarConta} tratarErro={tratarErro} />}
+            />
             <Route path="*" element={<Navigate to="/consulta" replace />} />
           </Routes>
         </main>

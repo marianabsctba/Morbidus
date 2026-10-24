@@ -1,12 +1,18 @@
 """Guarda o HTML bruto de cada coleta para permitir reprocessar quando o parser melhorar."""
 
 import io
+import time
 from pathlib import Path
 
 
 class RawStore:
     def put(self, key: str, data: bytes, content_type: str = "text/html") -> None:
         raise NotImplementedError
+
+    def purge(self, older_than_days: int) -> int:
+        """Apaga páginas antigas. O HTML bruto traz dados de terceiros (parentes,
+        endereços) e só serve para reprocessar, então não deve ficar para sempre."""
+        return 0
 
 
 class MemoryRawStore(RawStore):
@@ -33,6 +39,18 @@ class FileRawStore(RawStore):
         tmp = destino.with_suffix(destino.suffix + ".tmp")
         tmp.write_bytes(data)
         tmp.replace(destino)
+
+    def purge(self, older_than_days: int) -> int:
+        limite = time.time() - older_than_days * 86400
+        apagados = 0
+        for arquivo in self._base.rglob("*"):
+            if arquivo.is_file() and arquivo.stat().st_mtime < limite:
+                arquivo.unlink()
+                apagados += 1
+        for pasta in sorted((p for p in self._base.rglob("*") if p.is_dir()), reverse=True):
+            if not any(pasta.iterdir()):
+                pasta.rmdir()
+        return apagados
 
 
 class MinioRawStore(RawStore):

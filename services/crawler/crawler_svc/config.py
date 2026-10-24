@@ -11,6 +11,8 @@ class CrawlerSettings(ServiceSettings):
     request_delay_seconds: float = 5.0
     raw_store_backend: str = "memory"  # memory | file | minio (qualquer S3)
     raw_store_dir: str = "/data/raw"
+    # No S3, configure uma regra de ciclo de vida no bucket com o mesmo prazo.
+    raw_retention_days: int = 30
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "morbidus"
     minio_secret_key: str = "morbidus-dev"

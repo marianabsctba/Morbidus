@@ -4,9 +4,9 @@ import { EtiquetaStatus, Medidor } from "../componentes";
 import { FINALIDADES, STATUS, UFS } from "../dados";
 import { cpfValido, dataBr, dominio, mascararCpf, soDigitos } from "../util";
 
-type Props = { tratarErro: (e: unknown) => string };
+type Props = { tratarErro: (e: unknown) => string; aoConsultar?: () => void };
 
-export default function Consulta({ tratarErro }: Props) {
+export default function Consulta({ tratarErro, aoConsultar }: Props) {
   const [cpf, setCpf] = useState("");
   const [nome, setNome] = useState("");
   const [nascimento, setNascimento] = useState("");
@@ -38,6 +38,7 @@ export default function Consulta({ tratarErro }: Props) {
         uf: uf || undefined,
       });
       setResultado(r);
+      aoConsultar?.();
     } catch (err) {
       setErro(tratarErro(err));
     } finally {

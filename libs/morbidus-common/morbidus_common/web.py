@@ -43,4 +43,5 @@ def require_tenant(
     """
     if not x_tenant_id:
         raise HTTPException(status_code=401, detail="tenant não identificado")
-    return TenantContext(tenant_id=x_tenant_id, api_key_id=x_api_key_id)
+    # Consulta feita pelo painel (sessão) chega com X-Api-Key-Id vazio.
+    return TenantContext(tenant_id=x_tenant_id, api_key_id=x_api_key_id or None)

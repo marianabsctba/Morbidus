@@ -156,6 +156,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .topo .marca { font-size: 26px; }
 .topo nav { display: flex; gap: 4px; }
+.topo nav a, .topo .botao { white-space: nowrap; }
 .topo nav a {
   color: var(--osso-2); text-decoration: none;
   font-family: var(--f-ficha); font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase;
@@ -289,6 +290,35 @@ button, input, select { font: inherit; color: inherit; }
   box-shadow: 0 0 18px var(--sangue);
 }
 .login .rodape-login { margin-top: 28px; color: var(--cinza); font-size: 12px; text-align: center; }
+
+.abas { display: flex; gap: 4px; margin: -6px 0 22px; border-bottom: 1px solid var(--borda); }
+.abas button {
+  background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  padding: 8px 14px; cursor: pointer; color: var(--cinza);
+  font-family: var(--f-ficha); font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.abas button[aria-selected="true"] { color: var(--sangue); border-bottom-color: var(--sangue); }
+.abas button:hover { color: var(--osso); }
+
+.aceite { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--osso-2); margin: 4px 0 18px; cursor: pointer; }
+.aceite input { margin-top: 3px; accent-color: var(--sangue); width: 16px; height: 16px; flex: none; }
+
+/* ---------- Minha conta ---------- */
+
+.uso-topo { font-family: var(--f-dado); font-size: 12px; color: var(--cinza); white-space: nowrap; }
+.conta-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.ficha { display: grid; grid-template-columns: auto 1fr; gap: 10px 20px; margin: 0; }
+.ficha dt { font-family: var(--f-ficha); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cinza); padding-top: 2px; }
+.ficha dd { margin: 0; }
+.medidor-linha { height: 4px; background: var(--borda); border-radius: 2px; overflow: hidden; margin: 14px 0; }
+.medidor-linha span { display: block; height: 100%; background: linear-gradient(90deg, var(--sangue-escuro), var(--sangue)); box-shadow: 0 0 10px var(--sangue); }
+.gerar-chave { display: flex; gap: 12px; align-items: flex-end; margin-top: 18px; }
+.chave-nova {
+  margin: 18px 0 6px; padding: 16px; border: 1px solid var(--borda-viva); border-left: 3px solid var(--sangue);
+  border-radius: var(--raio); background: rgba(255, 42, 61, 0.06);
+}
+.chave-nova p { margin: 0 0 10px; font-size: 14px; }
+.chave-nova code { display: block; font-family: var(--f-dado); font-size: 14px; word-break: break-all; color: var(--osso); }
 
 /* ---------- Consulta ---------- */
 
@@ -447,8 +477,14 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 /* ---------- Responsivo ---------- */
 
+@media (max-width: 1100px) {
+  .topo { gap: 16px; padding: 14px 20px; }
+  .topo nav a { padding: 8px 10px; }
+  .uso-topo { display: none; }
+}
+
 @media (max-width: 1020px) {
-  .consulta, .cobertura { grid-template-columns: minmax(0, 1fr); }
+  .consulta, .cobertura, .conta-grade { grid-template-columns: minmax(0, 1fr); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .evidencia dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -469,6 +505,8 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
   .mapa { gap: 4px; }
   .uf { font-size: 12px; }
   .uf small { font-size: 9px; }
+  .uso-topo { display: none; }
+  .gerar-chave { flex-direction: column; align-items: stretch; }
   .fonte-item { grid-template-columns: auto 1fr; }
   .fonte-item .etiqueta { grid-column: 2; justify-self: start; }
 }

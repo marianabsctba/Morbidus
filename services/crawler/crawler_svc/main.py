@@ -78,6 +78,9 @@ def build_app(
     async def _scheduler() -> None:
         while True:
             await _todas(backfill=False, max_pages=None)
+            apagados = await asyncio.to_thread(store.purge, settings.raw_retention_days)
+            if apagados:
+                log.info("retenção: %d páginas brutas com mais de %d dias apagadas", apagados, settings.raw_retention_days)
             await asyncio.sleep(settings.crawl_interval_minutes * 60)
 
     @asynccontextmanager
