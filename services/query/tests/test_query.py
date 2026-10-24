@@ -129,3 +129,15 @@ def test_fontes_da_evidencia_so_para_admin(ambiente):
     assert "fontes" not in comum["evidencias"][0]["detalhes"]
     admin = client.post("/v1/consultas", json=corpo, headers={**TENANT, "X-Papel": "admin"}).json()
     assert admin["evidencias"][0]["detalhes"]["fontes"] == ["https://jornal/x"]
+
+
+def test_registra_ip_e_user_agent_de_quem_consultou(ambiente):
+    client, bus = ambiente
+    headers = {**TENANT, "X-Real-Ip": "203.0.113.9", "User-Agent": "Navegador Teste/1.0"}
+    client.post("/v1/consultas", json={"cpf": CPF_REGULAR, "finalidade": "onboarding"}, headers=headers)
+    evento = bus.published[-1][1]
+    assert evento["ip_origem"] == "203.0.113.9"
+    assert evento["user_agent"] == "Navegador Teste/1.0"
+    # IP inválido no cabeçalho não é gravado como se fosse IP.
+    client.post("/v1/consultas", json={"cpf": CPF_REGULAR, "finalidade": "onboarding"}, headers={**TENANT, "X-Real-Ip": "<script>"})
+    assert bus.published[-1][1]["ip_origem"] == "testclient"

@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import ipaddress
 import hmac
 import logging
 from contextlib import asynccontextmanager
@@ -10,7 +11,7 @@ from enum import Enum
 from uuid import uuid4
 
 import httpx
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from morbidus_common.bus import EventBus, make_bus
 from morbidus_common.events import QueryPerformed, QueryStatus, Topics
 from morbidus_common.logging import setup_logging
@@ -71,6 +72,19 @@ class ConsultaOut(BaseModel):
     aviso: str | None = None
 
 
+def ip_do_cliente(request: Request) -> str | None:
+    """IP de quem consultou. O gateway só repassa X-Real-Ip vindo de proxy confiável
+    (nginx do host, que copia o CF-Connecting-IP da Cloudflare); senão, ele mesmo preenche."""
+    for valor in (request.headers.get("x-real-ip"), (request.headers.get("x-forwarded-for") or "").split(",")[0]):
+        valor = (valor or "").strip()
+        if valor:
+            try:
+                return str(ipaddress.ip_address(valor))
+            except ValueError:
+                continue
+    return request.client.host if request.client else None
+
+
 def build_app(
     settings: QuerySettings | None = None,
     bus: EventBus | None = None,
@@ -122,7 +136,7 @@ def build_app(
         return sorted(evidencias, key=lambda e: e.score, reverse=True)
 
     @app.post("/v1/consultas", response_model=ConsultaOut)
-    async def consultar(body: ConsultaIn, tenant: TenantContext = Depends(require_tenant)):
+    async def consultar(body: ConsultaIn, request: Request, tenant: TenantContext = Depends(require_tenant)):
         cpf = only_digits(body.cpf) if body.cpf else None
         if cpf and not is_valid_cpf(cpf):
             raise HTTPException(status_code=422, detail="CPF inválido")
@@ -173,6 +187,8 @@ def build_app(
                 status=status,
                 score=score,
                 fontes_consultadas=fontes,
+                ip_origem=ip_do_cliente(request),
+                user_agent=(request.headers.get("user-agent") or "")[:300] or None,
             ),
             key=tenant.tenant_id,
         )

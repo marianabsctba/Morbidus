@@ -80,7 +80,7 @@ ROTAS = [
     ("/v1/estatisticas", "resolver", True, {"GET"}),
     ("/v1/sources", "crawler", True, {"GET"}),
 ]
-_SEM_REPASSE = {"host", "content-length", "x-tenant-id", "x-api-key-id", "x-papel", "transfer-encoding", "content-encoding"}
+_SEM_REPASSE = {"host", "content-length", "x-tenant-id", "x-api-key-id", "x-papel", "x-real-ip", "x-forwarded-for", "transfer-encoding", "content-encoding"}
 
 
 async def gateway(request: Request) -> Response:
@@ -92,6 +92,8 @@ async def gateway(request: Request) -> Response:
     if metodos and request.method not in metodos:
         return JSONResponse({"detail": "método não permitido"}, status_code=405)
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _SEM_REPASSE}
+    # Como o Traefik sem proxy confiável na frente: o IP é o da conexão, nunca o do cliente.
+    headers["X-Real-Ip"] = request.client.host if request.client else ""
     if exige_chave:
         # Mesmo contrato do forwardAuth do Traefik: credenciais + método e URI originais.
         auth_headers = {"X-Forwarded-Method": request.method, "X-Forwarded-Uri": caminho}

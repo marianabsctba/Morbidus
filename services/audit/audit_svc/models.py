@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from morbidus_common.db import ensure_columns
 from sqlalchemy import JSON, DateTime, Float, String, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -24,7 +25,13 @@ class AuditEntry(Base):
     score: Mapped[float] = mapped_column(Float)
     fontes_consultadas: Mapped[list] = mapped_column(JSON)
     ocorrido_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Registro de acesso (Marco Civil, art. 15). Exposto só na auditoria geral.
+    ip_origem: Mapped[str | None] = mapped_column(String(45), index=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300))
 
+
+# Colunas acrescentadas depois que a tabela já existia em produção.
+_COLUNAS_NOVAS = {"ip_origem": "VARCHAR(45)", "user_agent": "VARCHAR(300)"}
 
 _APPEND_ONLY = [
     """
@@ -44,6 +51,7 @@ _APPEND_ONLY = [
 
 def setup_schema(engine: Engine) -> None:
     Base.metadata.create_all(engine)
+    ensure_columns(engine, "audit_entries", _COLUNAS_NOVAS)
     if engine.dialect.name == "postgresql":
         with engine.begin() as conn:
             for stmt in _APPEND_ONLY:

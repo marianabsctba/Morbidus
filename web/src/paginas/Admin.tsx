@@ -213,6 +213,7 @@ function AuditoriaGeral({
 }) {
   const [itens, setItens] = useState<AuditEntryGeral[]>([]);
   const [conta, setConta] = useState("");
+  const [ip, setIp] = useState("");
   const [fim, setFim] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const porTenant = useMemo(() => Object.fromEntries(usuarios.map((u) => [u.tenant_id, u])), [usuarios]);
@@ -221,7 +222,7 @@ function AuditoriaGeral({
     async (offset: number) => {
       setCarregando(true);
       try {
-        const novos = await api.auditoriaGeral(offset, PAGINA, conta || undefined);
+        const novos = await api.auditoriaGeral(offset, PAGINA, { tenantId: conta || undefined, ip: ip || undefined });
         setItens((atual) => (offset === 0 ? novos : [...atual, ...novos]));
         setFim(novos.length < PAGINA);
       } catch (e) {
@@ -230,7 +231,7 @@ function AuditoriaGeral({
         setCarregando(false);
       }
     },
-    [conta, setErro, tratarErro],
+    [conta, ip, setErro, tratarErro],
   );
 
   useEffect(() => {
@@ -240,16 +241,22 @@ function AuditoriaGeral({
   return (
     <div className="painel">
       <h2>Todas as consultas</h2>
-      <div className="campo" style={{ maxWidth: 360 }}>
-        <label htmlFor="filtro-conta">Conta</label>
-        <select id="filtro-conta" value={conta} onChange={(e) => setConta(e.target.value)}>
-          <option value="">Todas</option>
-          {usuarios.map((u) => (
-            <option key={u.tenant_id} value={u.tenant_id}>
-              {u.email}
-            </option>
-          ))}
-        </select>
+      <div className="filtros">
+        <div className="campo">
+          <label htmlFor="filtro-conta">Conta</label>
+          <select id="filtro-conta" value={conta} onChange={(e) => setConta(e.target.value)}>
+            <option value="">Todas</option>
+            {usuarios.map((u) => (
+              <option key={u.tenant_id} value={u.tenant_id}>
+                {u.email}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="campo">
+          <label htmlFor="filtro-ip">IP de origem</label>
+          <input id="filtro-ip" placeholder="todos" value={ip} onChange={(e) => setIp(e.target.value.trim())} />
+        </div>
       </div>
       {itens.length === 0 && !carregando ? (
         <p className="mudo">Nenhuma consulta registrada.</p>
@@ -260,6 +267,7 @@ function AuditoriaGeral({
               <tr>
                 <th>Quando</th>
                 <th>Conta</th>
+                <th>IP</th>
                 <th>Consultado</th>
                 <th>Finalidade</th>
                 <th>Origem</th>
@@ -273,6 +281,15 @@ function AuditoriaGeral({
                   <td className="dado">{dataHoraBr(a.ocorrido_em)}</td>
                   <td className="dado" style={{ fontSize: 12 }}>
                     {porTenant[a.tenant_id]?.email ?? "chave administrativa"}
+                  </td>
+                  <td className="dado" style={{ fontSize: 12 }} title={a.user_agent ?? "sem user-agent"}>
+                    {a.ip_origem ? (
+                      <button className="link-ip" onClick={() => setIp(a.ip_origem!)}>
+                        {a.ip_origem}
+                      </button>
+                    ) : (
+                      <span className="mudo">não registrado</span>
+                    )}
                   </td>
                   <td>
                     {a.cpf_mascarado && <div className="dado">{a.cpf_mascarado}</div>}

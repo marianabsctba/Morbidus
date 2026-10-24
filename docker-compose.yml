@@ -25,6 +25,9 @@ services:
       # Só enxerga containers deste projeto, mesmo em host com outros stacks.
       - --providers.docker.constraints=Label(`com.docker.compose.project`,`morbidus`)
       - --entrypoints.web.address=:80
+      # Confia nos X-Forwarded-*/X-Real-Ip só quando a conexão vem de rede privada
+      # (o nginx do host). Sem isso, todo cliente aparece com o IP interno do Docker.
+      - --entrypoints.web.forwardedHeaders.trustedIPs=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       - --entrypoints.metrics.address=:8082
       - --metrics.prometheus=true
       - --metrics.prometheus.entrypoint=metrics
@@ -108,14 +111,14 @@ services:
       # O forwardAuth aceita API key ou sessão do painel e aplica a cota diária.
       - traefik.http.middlewares.apikey.forwardauth.address=http://identity:8000/auth/verify
       - traefik.http.middlewares.apikey.forwardauth.authResponseHeaders=X-Tenant-Id,X-Api-Key-Id,X-Papel
-      # Limite por IP do cliente. Atrás do nginx do host, o IP real vem no X-Forwarded-For.
+      # Limite por IP do cliente: ignora os saltos internos (nginx, Docker) e usa o IP real.
       - traefik.http.middlewares.ratelimit.ratelimit.average=20
       - traefik.http.middlewares.ratelimit.ratelimit.burst=40
-      - traefik.http.middlewares.ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1
+      - traefik.http.middlewares.ratelimit.ratelimit.sourcecriterion.ipstrategy.excludedips=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       - traefik.http.middlewares.ratelimit-contas.ratelimit.average=10
       - traefik.http.middlewares.ratelimit-contas.ratelimit.period=1m
       - traefik.http.middlewares.ratelimit-contas.ratelimit.burst=10
-      - traefik.http.middlewares.ratelimit-contas.ratelimit.sourcecriterion.ipstrategy.depth=1
+      - traefik.http.middlewares.ratelimit-contas.ratelimit.sourcecriterion.ipstrategy.excludedips=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
   provider:
     <<: *service

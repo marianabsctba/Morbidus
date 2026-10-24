@@ -32,6 +32,8 @@ class AuditEntryOut(BaseModel):
 
 class AuditEntryGeralOut(AuditEntryOut):
     tenant_id: str
+    ip_origem: str | None
+    user_agent: str | None
 
 
 def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None):
@@ -59,6 +61,8 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
                     score=event.score,
                     fontes_consultadas=event.fontes_consultadas,
                     ocorrido_em=event.occurred_at,
+                    ip_origem=event.ip_origem,
+                    user_agent=event.user_agent,
                 )
             )
             db.commit()
@@ -98,6 +102,7 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
     def listar_geral(
         _: TenantContext = Depends(require_admin),
         tenant_id: str | None = Query(None, description="Filtra por uma conta"),
+        ip: str | None = Query(None, max_length=45, description="Filtra por IP de origem"),
         status: str | None = Query(None),
         limit: int = Query(50, ge=1, le=500),
         offset: int = Query(0, ge=0),
@@ -109,6 +114,8 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
                 stmt = stmt.where(AuditEntry.tenant_id == tenant_id)
             if status:
                 stmt = stmt.where(AuditEntry.status == status)
+            if ip:
+                stmt = stmt.where(AuditEntry.ip_origem == ip)
             stmt = stmt.order_by(AuditEntry.ocorrido_em.desc()).limit(limit).offset(offset)
             return db.scalars(stmt).all()
 

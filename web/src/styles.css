@@ -525,3 +525,10 @@ select.mini {
   padding: 5px 8px; font-family: var(--f-dado); font-size: 12px;
 }
 .erro-fonte { color: var(--sangue) !important; }
+.filtros { display: grid; grid-template-columns: repeat(2, minmax(0, 260px)); gap: 14px; }
+.link-ip {
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--osso);
+  font-family: var(--f-dado); font-size: 12px; text-decoration: underline dotted var(--cinza);
+}
+.link-ip:hover { color: var(--sangue); }
+@media (max-width: 640px) { .filtros { grid-template-columns: 1fr; } }

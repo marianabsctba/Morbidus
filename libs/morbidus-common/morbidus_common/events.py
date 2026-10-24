@@ -74,3 +74,6 @@ class QueryPerformed(Event):
     status: QueryStatus
     score: float
     fontes_consultadas: list[str]
+    # Registro de acesso (Marco Civil, art. 15). Só a administração vê.
+    ip_origem: str | None = None
+    user_agent: str | None = None

@@ -105,6 +105,8 @@ export type UsuarioAdminIn = Partial<Pick<UsuarioAdmin, "liberado" | "ativo" | "
 
 export interface AuditEntryGeral extends AuditEntry {
   tenant_id: string;
+  ip_origem: string | null;
+  user_agent: string | null;
 }
 
 export interface CadastroIn {
@@ -155,8 +157,10 @@ export const api = {
   usuarios: () => chamar<UsuarioAdmin[]>("/v1/conta/admin/usuarios"),
   alterarUsuario: (id: string, body: UsuarioAdminIn) =>
     chamar<UsuarioAdmin>(`/v1/conta/admin/usuarios/${id}`, json("PATCH", body)),
-  auditoriaGeral: (offset = 0, limit = 50, tenantId?: string) =>
-    chamar<AuditEntryGeral[]>(
-      `/v1/auditoria/geral?limit=${limit}&offset=${offset}${tenantId ? `&tenant_id=${tenantId}` : ""}`,
-    ),
+  auditoriaGeral: (offset = 0, limit = 50, filtros: { tenantId?: string; ip?: string } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (filtros.tenantId) q.set("tenant_id", filtros.tenantId);
+    if (filtros.ip) q.set("ip", filtros.ip);
+    return chamar<AuditEntryGeral[]>(`/v1/auditoria/geral?${q}`);
+  },
 };
