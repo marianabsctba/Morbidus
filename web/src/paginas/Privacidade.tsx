@@ -6,6 +6,8 @@ import { Marca } from "../componentes";
 // todas as contas precisarão aceitar de novo antes de consultar.
 export const VERSAO = "2026-10-24";
 export const CONTROLADOR = "BeSafe Academy";
+// LGPD, art. 41, §1º: identidade e canal do encarregado públicos. O canal é o formulário abaixo.
+export const ENCARREGADA = "Mariana B., advogada";
 
 export default function Privacidade({ aoVoltar }: { aoVoltar?: () => void }) {
   return (
@@ -21,7 +23,7 @@ export default function Privacidade({ aoVoltar }: { aoVoltar?: () => void }) {
         <p>
           O MORBiDus é uma plataforma gratuita e de código aberto de prevenção à fraude com identidades de pessoas
           falecidas (Death Identity Fraud Prevention). É operado pela {CONTROLADOR}, que é a controladora dos dados
-          tratados aqui. Para falar com o encarregado de proteção de dados, use o{" "}
+          tratados aqui. A encarregada de proteção de dados (DPO) é {ENCARREGADA}. Para falar com ela, use o{" "}
           <a href="#encarregado">formulário no fim desta página</a>.
         </p>
       </section>

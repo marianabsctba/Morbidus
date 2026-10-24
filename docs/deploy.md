@@ -99,4 +99,4 @@ A auditoria é append-only: um gatilho no Postgres bloqueia UPDATE e DELETE. A �
 - [x] Backup diário dos bancos (`scripts/backup.sh`)
 - [ ] Cópia dos backups para fora do servidor, cifrada
 - [x] Política de privacidade e termos de uso em `/privacidade`, com aceite registrado e formulário para o encarregado
-- [ ] Encarregado (DPO) definido para atender pedidos de titulares
+- [x] Encarregada (DPO) definida e identificada na política, com o formulário como canal
