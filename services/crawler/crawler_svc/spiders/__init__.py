@@ -4,11 +4,19 @@ from crawler_svc.spiders.campogrande import ACriticaCampoGrandeSpider
 from crawler_svc.spiders.curitiba import CuritibaServicoFunerarioSpider
 from crawler_svc.spiders.fixture import FixtureSpider
 from crawler_svc.spiders.florianopolis import JardimDaPazSpider
-from crawler_svc.spiders.memoriam import AngelusPortoAlegreSpider, LeaoEVilaNatalSpider
+from crawler_svc.spiders.memoriam import (
+    AngelusPortoAlegreSpider,
+    JardimDaSaudadeCuritibaSpider,
+    LeaoEVilaNatalSpider,
+    OrsoluBoaVistaSpider,
+    ParqueDaPazCampinaGrandeSpider,
+    PaxUniaoSaoLuisSpider,
+)
 from crawler_svc.spiders.palmas import PaxPalmasSpider
 from crawler_svc.spiders.portovelho import NewsRondoniaSpider
 from crawler_svc.spiders.salvador import BosqueDaPazSpider, CampoSantoSpider
 from crawler_svc.spiders.saopaulo import ChevraKadishaSpider
+from crawler_svc.spiders.teresina import PaxUniaoTeresinaSpider
 
 # Uma classe por fonte, com source_id único. Ver docs/fontes-obituarios.md.
 SPIDERS: dict[str, type[Spider]] = {
@@ -26,6 +34,11 @@ SPIDERS: dict[str, type[Spider]] = {
         JardimDaPazSpider,
         CorreioBrazilienseSpider,
         ACriticaCampoGrandeSpider,
+        PaxUniaoTeresinaSpider,
+        OrsoluBoaVistaSpider,
+        PaxUniaoSaoLuisSpider,
+        JardimDaSaudadeCuritibaSpider,
+        ParqueDaPazCampinaGrandeSpider,
     )
 }
 

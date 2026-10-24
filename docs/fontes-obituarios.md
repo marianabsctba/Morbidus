@@ -25,26 +25,26 @@ Legenda: ✅ spider ativo · 🟡 fonte existe, spider pendente · ⛔ fonte blo
 | Brasília | DF | ✅ | `brasilia-correio-braziliense` | desde 2024 |
 | Vitória | ES | 🟡 | A Gazeta (só pessoas notórias) | |
 | Goiânia | GO | ❌ | | |
-| São Luís | MA | ❌ | O Imparcial, seção Luto (notórios) | |
+| São Luís | MA | ✅ | `saoluis-pax-uniao` (parado desde mai/2026) | ~900 de mar/2025 a mai/2026 |
 | Cuiabá | MT | ❌ | | |
 | Campo Grande | MS | ✅ | `campogrande-a-critica` | desde set/2026 |
 | Belo Horizonte | MG | 🟡 | Estado de Minas (notórios) | |
 | Belém | PA | ❌ | | |
-| João Pessoa | PB | ❌ | | |
-| Curitiba | PR | ✅ | `curitiba-servico-funerario` | 2 dias (coletar várias vezes ao dia) |
+| João Pessoa | PB | 🟡 | `campinagrande-parque-da-paz` (Campina Grande, não a capital) | histórico do Memoriam |
+| Curitiba | PR | ✅ | `curitiba-servico-funerario`, `curitiba-jardim-da-saudade` | 2 dias (prefeitura) e histórico (Jardim da Saudade) |
 | Recife | PE | ❌ | | |
-| Teresina | PI | ❌ | | |
+| Teresina | PI | ✅ | `teresina-pax-uniao` | ~3 semanas (coleta contínua) |
 | Rio de Janeiro | RJ | ❌ | | |
 | Natal | RN | ✅ | `natal-leao-e-vila` | ~1.240 desde 2025 |
 | Porto Alegre | RS | ✅ | `portoalegre-angelus` | ~8.300 |
 | Porto Velho | RO | ✅ | `portovelho-news-rondonia` | ~430 |
-| Boa Vista | RR | ❌ | | |
+| Boa Vista | RR | ✅ | `boavista-orsolu` | histórico do Memoriam |
 | Florianópolis | SC | ✅ | `florianopolis-jardim-da-paz` | só dias recentes |
 | São Paulo | SP | ✅ | `saopaulo-chevra-kadisha` | mês corrente |
 | Aracaju | SE | ❌ | | |
 | Palmas | TO | ✅ | `palmas-pax` | ~3.900 desde 2021 |
 
-**11 spiders ativos em 10 capitais.** Nenhuma prefeitura das 27 capitais publica lista de sepultados em formato aberto e coletável, exceto Curitiba. Campo Grande publica, mas bloqueia no `robots.txt`.
+**17 spiders ativos em 13 capitais, mais Campina Grande (PB).** Nenhuma prefeitura das 27 capitais publica lista de sepultados em formato aberto e coletável, exceto Curitiba. Campo Grande publica, mas bloqueia no `robots.txt`.
 
 ## Detalhe das fontes ativas
 
@@ -89,5 +89,6 @@ Legenda: ✅ spider ativo · 🟡 fonte existe, spider pendente · ⛔ fonte blo
 
 Pendências técnicas:
 - **Manaus (Santa Rita / São Francisco):** a API da Santa Rita respondeu erro 522; tentar de novo e escrever o spider.
-- **Sistema Memoriam:** atende outras funerárias como tenants, então vale perguntar ao fornecedor (Trimarc) quais existem nas capitais, em vez de varrer IDs.
+- **Sistema Memoriam:** atende várias funerárias como tenants. Os que usamos vieram de resultados de busca (Orsolu `/f/41`, Jardim da Saudade Curitiba `/f/306`, Pax União São Luís `/f/338`, Parque da Paz Campina Grande `/f/421`); não varremos IDs. Vale perguntar ao fornecedor (Trimarc) por outros nas capitais.
+- **Adiaŭ** (velório online usado por Pax União e Vale da Saudade): robots.txt bloqueia `/embed` e os termos proíbem armazenar informações. Não coletar.
 - **Cemitério Israelita:** histórico de 2006 a 2026 atrás de um filtro em JavaScript; investigar o endpoint.

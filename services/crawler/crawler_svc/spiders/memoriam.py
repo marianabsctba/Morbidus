@@ -52,3 +52,43 @@ class LeaoEVilaNatalSpider(MemoriamSpider):
     descricao = "Grupo Leão e Vila (Sistema Memoriam)"
     base_url = "https://sistemamemoriam.com"
     tenant_id = 374
+
+
+class OrsoluBoaVistaSpider(MemoriamSpider):
+    source_id = "boavista-orsolu"
+    cidade = "Boa Vista"
+    uf = "RR"
+    descricao = "Funerária Orsolu (Sistema Memoriam)"
+    base_url = "https://sistemamemoriam.com"
+    tenant_id = 41
+
+
+class PaxUniaoSaoLuisSpider(MemoriamSpider):
+    """Sem novos registros desde maio de 2026; vale pelo histórico e caso volte a publicar."""
+
+    source_id = "saoluis-pax-uniao"
+    cidade = "São Luís"
+    uf = "MA"
+    descricao = "Grupo Pax União São Luís (Sistema Memoriam)"
+    base_url = "https://sistemamemoriam.com"
+    tenant_id = 338
+
+
+class JardimDaSaudadeCuritibaSpider(MemoriamSpider):
+    source_id = "curitiba-jardim-da-saudade"
+    cidade = "Curitiba"
+    uf = "PR"
+    descricao = "Cemitério Jardim da Saudade de Curitiba (Sistema Memoriam)"
+    base_url = "https://sistemamemoriam.com"
+    tenant_id = 306
+
+
+class ParqueDaPazCampinaGrandeSpider(MemoriamSpider):
+    """Não é capital, mas é a única fonte aberta da Paraíba."""
+
+    source_id = "campinagrande-parque-da-paz"
+    cidade = "Campina Grande"
+    uf = "PB"
+    descricao = "Parque da Paz de Campina Grande (Sistema Memoriam)"
+    base_url = "https://sistemamemoriam.com"
+    tenant_id = 421

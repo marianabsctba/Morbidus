@@ -184,3 +184,27 @@ def test_todas_as_fontes_tem_metadados():
 
 def test_fixture_json_e_valida():
     json.loads((FIXTURES / "bosque_da_paz.json").read_text(encoding="utf-8"))
+
+
+def test_pax_uniao_teresina():
+    entries = _parse("teresina-pax-uniao", "pax_uniao_teresina.html")
+    assert [(e.nome, e.data_nascimento, e.data_falecimento, e.data_sepultamento, e.local) for e in entries] == [
+        ("GENOVEVA FICTICIA OLIVEIRA", "25/08/1942", "24/10/2026", "24/10/2026", "JARDIM II"),
+        ("MANOEL DE TESTE MELLO", "13/11/1939", "23/10/2026", None, None),
+    ]
+
+
+async def test_fetchers_diferentes_dividem_o_ritmo_do_mesmo_site():
+    import time
+
+    from crawler_svc.fetcher import PoliteFetcher
+
+    PoliteFetcher._ultimo_acesso.clear()
+    rotas = {"https://memoriam.exemplo/f/1": "a", "https://memoriam.exemplo/f/2": "b"}
+    a, b = _fetcher(rotas), _fetcher(rotas)
+    a._delay = b._delay = 0.3
+    inicio = time.monotonic()
+    await a.get("https://memoriam.exemplo/f/1")
+    await b.get("https://memoriam.exemplo/f/2")
+    # O segundo spider espera o intervalo do primeiro, mesmo sendo outro fetcher.
+    assert time.monotonic() - inicio >= 0.3

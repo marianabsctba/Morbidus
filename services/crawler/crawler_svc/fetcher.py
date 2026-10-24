@@ -53,8 +53,13 @@ class PoliteFetcher:
             headers={"User-Agent": user_agent}, timeout=20, follow_redirects=True
         )
         self._robots: dict[str, RobotFileParser] = {}
-        self._last_hit: dict[str, float] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        # Intervalo e trava por host compartilhados entre todos os fetchers do processo:
+        # vários spiders do mesmo site (ex.: tenants do Sistema Memoriam) dividem o ritmo.
+        self._last_hit = PoliteFetcher._ultimo_acesso
+        self._locks = PoliteFetcher._travas
+
+    _ultimo_acesso: dict[str, float] = {}
+    _travas: dict[tuple[int, str], asyncio.Lock] = {}
 
     def _espera(self, tentativa: int, sugerida: float | None = None) -> float:
         # Cresce rápido (delay x 3, x 9, x 27) para dar tempo de um limite temporário expirar.
@@ -63,7 +68,8 @@ class PoliteFetcher:
 
     async def _pedir(self, origin: str, url: str) -> httpx.Response:
         """Uma requisição respeitando o intervalo por host, com novas tentativas em falhas passageiras."""
-        lock = self._locks.setdefault(origin, asyncio.Lock())
+        # A trava é por event loop: em testes cada caso roda num loop novo.
+        lock = self._locks.setdefault((id(asyncio.get_running_loop()), origin), asyncio.Lock())
         for tentativa in range(self._tentativas):
             async with lock:
                 wait = self._last_hit.get(origin, 0) + self._delay - time.monotonic()
