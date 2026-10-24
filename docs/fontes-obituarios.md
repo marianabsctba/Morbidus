@@ -24,11 +24,11 @@ Legenda: ✅ spider ativo · 🟡 fonte existe, spider pendente · ⛔ fonte blo
 | Fortaleza | CE | ❌ | | |
 | Brasília | DF | ✅ | `brasilia-correio-braziliense` | desde 2024 |
 | Vitória | ES | 🟡 | A Gazeta (só pessoas notórias) | |
-| Goiânia | GO | ❌ | | |
+| Goiânia | GO | ✅ | `goiania-parque-memorial` (só o dia; a coleta forma o histórico) | desde out/2026 |
 | São Luís | MA | ✅ | `saoluis-pax-uniao` (parado desde mai/2026) | ~900 de mar/2025 a mai/2026 |
-| Cuiabá | MT | ❌ | | |
+| Cuiabá | MT | ✅ | `cuiaba-pax-nacional` (parado desde dez/2025) | ~26 mil de 2018 a dez/2025 |
 | Campo Grande | MS | ✅ | `campogrande-a-critica` | desde set/2026 |
-| Belo Horizonte | MG | 🟡 | Estado de Minas (notórios) | |
+| Belo Horizonte | MG | ✅ | `bh-coracao-de-jesus` (volume baixo) | avisos recentes |
 | Belém | PA | ❌ | | |
 | João Pessoa | PB | 🟡 | `campinagrande-parque-da-paz` (Campina Grande, não a capital) | histórico do Memoriam |
 | Curitiba | PR | ✅ | `curitiba-servico-funerario`, `curitiba-jardim-da-saudade` | 2 dias (prefeitura) e histórico (Jardim da Saudade) |
@@ -44,7 +44,7 @@ Legenda: ✅ spider ativo · 🟡 fonte existe, spider pendente · ⛔ fonte blo
 | Aracaju | SE | ❌ | | |
 | Palmas | TO | ✅ | `palmas-pax` | ~3.900 desde 2021 |
 
-**17 spiders ativos em 13 capitais, mais Campina Grande (PB).** Nenhuma prefeitura das 27 capitais publica lista de sepultados em formato aberto e coletável, exceto Curitiba. Campo Grande publica, mas bloqueia no `robots.txt`.
+**20 spiders ativos em 16 capitais, mais Campina Grande (PB).** Nenhuma prefeitura das 27 capitais publica lista de sepultados em formato aberto e coletável, exceto Curitiba. Campo Grande publica, mas bloqueia no `robots.txt`.
 
 ## Detalhe das fontes ativas
 
@@ -68,6 +68,9 @@ Legenda: ✅ spider ativo · 🟡 fonte existe, spider pendente · ⛔ fonte blo
 | --- | --- | --- |
 | SCSWEB, Prefeitura de Campo Grande | `robots.txt` com `Disallow: /` | já coberto pelo A Crítica; pedir acesso formal |
 | Páginas de detalhe do Pax Palmas | `robots.txt` bloqueia `/obito/` | a listagem basta para o matching |
+| Bosque da Esperança (BH) | os dados vêm do Google Calendar, cujo `robots.txt` proíbe tudo; a página embute uma chave de API, que não usamos | pedir um feed autorizado |
+| Parque Renascer (BH) | `robots.txt` proíbe o endpoint que entrega a agenda (`/wp-admin/admin-ajax.php`) | pedir autorização |
+| Complexo Vale do Cerrado (Goiânia) | termos de uso proíbem copiar e redistribuir o conteúdo | pedir autorização: é a melhor fonte de Goiânia |
 | CNF (Cadastro Nacional de Falecidos) | termos proíbem coleta e retransmissão por terceiros sem contrato | a fonte deles é a ABRASIF: parceria direta |
 | Morada da Memória (Recife, Natal) | reCAPTCHA e só busca por nome | parceria com o Grupo Vila |
 | Velórios online com senha (Zelo, Vale da Saudade e outras) | acesso restrito à família | não se aplica |

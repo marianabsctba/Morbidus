@@ -1,6 +1,11 @@
 from crawler_svc.spiders.base import ObituaryEntry, Page, PaginatedSpider, Spider
 from crawler_svc.spiders.brasilia import CorreioBrazilienseSpider
 from crawler_svc.spiders.campogrande import ACriticaCampoGrandeSpider
+from crawler_svc.spiders.centro_sudeste import (
+    CoracaoDeJesusBHSpider,
+    PaxNacionalCuiabaSpider,
+    ParqueMemorialGoianiaSpider,
+)
 from crawler_svc.spiders.curitiba import CuritibaServicoFunerarioSpider
 from crawler_svc.spiders.fixture import FixtureSpider
 from crawler_svc.spiders.florianopolis import JardimDaPazSpider
@@ -39,6 +44,9 @@ SPIDERS: dict[str, type[Spider]] = {
         PaxUniaoSaoLuisSpider,
         JardimDaSaudadeCuritibaSpider,
         ParqueDaPazCampinaGrandeSpider,
+        PaxNacionalCuiabaSpider,
+        CoracaoDeJesusBHSpider,
+        ParqueMemorialGoianiaSpider,
     )
 }
 

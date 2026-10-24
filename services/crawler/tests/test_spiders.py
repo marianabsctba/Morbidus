@@ -208,3 +208,22 @@ async def test_fetchers_diferentes_dividem_o_ritmo_do_mesmo_site():
     await b.get("https://memoriam.exemplo/f/2")
     # O segundo spider espera o intervalo do primeiro, mesmo sendo outro fetcher.
     assert time.monotonic() - inicio >= 0.3
+
+
+def test_pax_nacional_cuiaba():
+    (entry,) = _parse("cuiaba-pax-nacional", "centro_sudeste.html")
+    assert (entry.nome, entry.data_nascimento, entry.data_falecimento) == ("CECILIA FICTICIA SILVEIRA", "30/08/1929", "08/12/2025")
+    assert SPIDERS["cuiaba-pax-nacional"]().page_url(3).endswith("?start=36")
+
+
+def test_coracao_de_jesus_bh():
+    (entry,) = _parse("bh-coracao-de-jesus", "centro_sudeste.html")
+    assert (entry.nome, entry.idade, entry.data_sepultamento) == ("Petronilha Exemplo de Moura", "77 anos", "27/09/2026")
+
+
+def test_parque_memorial_goiania_usa_a_data_da_coleta():
+    from datetime import datetime, timedelta, timezone
+
+    (entry,) = _parse("goiania-parque-memorial", "centro_sudeste.html")
+    hoje = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y")
+    assert (entry.nome, entry.data_sepultamento, entry.local) == ("HELENA FICTICIA MARTINS", hoje, "Parque Memorial, Sala 02")
