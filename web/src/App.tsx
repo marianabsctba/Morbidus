@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, Conta as ContaT, NaoAutorizado } from "./api";
 import { Atmosfera, Marca } from "./componentes";
+import Admin from "./paginas/Admin";
 import Auditoria from "./paginas/Auditoria";
 import Cobertura from "./paginas/Cobertura";
 import Consulta from "./paginas/Consulta";
@@ -107,6 +108,11 @@ export default function App() {
             <NavLink to="/conta" className={ativo}>
               Minha conta
             </NavLink>
+            {conta.admin && (
+              <NavLink to="/admin" className={ativo}>
+                Administração
+              </NavLink>
+            )}
           </nav>
           <div className="direita">
             <span className="uso-topo" title="Consultas feitas hoje">
@@ -133,10 +139,11 @@ export default function App() {
               element={<Consulta tratarErro={tratarErro} aoConsultar={atualizarConta} />}
             />
             <Route path="/auditoria" element={<Auditoria tratarErro={tratarErro} />} />
-            <Route path="/cobertura" element={<Cobertura tratarErro={tratarErro} />} />
+            <Route path="/cobertura" element={<Cobertura tratarErro={tratarErro} admin={conta.admin} />} />
+            {conta.admin && <Route path="/admin" element={<Admin tratarErro={tratarErro} />} />}
             <Route
               path="/conta"
-              element={<Conta conta={conta} atualizar={atualizarConta} tratarErro={tratarErro} />}
+              element={<Conta conta={conta} atualizar={atualizarConta} />}
             />
             <Route path="*" element={<Navigate to="/consulta" replace />} />
           </Routes>

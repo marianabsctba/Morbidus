@@ -142,6 +142,11 @@ def build_app(
                 log.exception("índice de obituários indisponível")
                 indisponiveis.append("obituario")
 
+        if not tenant.admin:
+            # De onde veio cada registro é informação interna da base.
+            for e in evidencias:
+                e.detalhes.pop("fontes", None)
+
         score = max((e.score for e in evidencias), default=0.0)
         if any(e.tipo == "oficial" for e in evidencias):
             status = QueryStatus.OBITO_CONFIRMADO

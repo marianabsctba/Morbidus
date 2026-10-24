@@ -43,8 +43,8 @@ export default function Entrada({ aoEntrar }: { aoEntrar: () => void }) {
                 setModo("entrar");
                 setAviso(
                   verificar
-                    ? "Conta criada. Enviamos um link de confirmação para o seu e-mail."
-                    : "Conta criada. Já pode entrar.",
+                    ? "Conta criada. Enviamos um link de confirmação para o seu e-mail; abra-o para liberar o acesso."
+                    : "Conta criada. Ela será liberada depois da análise da administração, e você poderá entrar em seguida.",
                 );
               }}
             />

@@ -5,10 +5,10 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, Query
+from fastapi import Depends, HTTPException, Query
 from morbidus_common.bus import EventBus, make_bus
 from morbidus_common.logging import setup_logging
-from morbidus_common.web import create_app
+from morbidus_common.web import create_app, require_admin
 
 from crawler_svc.config import CrawlerSettings
 from crawler_svc.fetcher import PoliteFetcher
@@ -95,8 +95,9 @@ def build_app(
 
     app = create_app("crawler", "Coleta de obituários de jornais, cemitérios e serviços funerários.", lifespan)
 
-    @app.get("/v1/sources")
+    @app.get("/v1/sources", dependencies=[Depends(require_admin)])
     def list_sources():
+        """Quais fontes alimentam a base. Só administradores: não é informação pública."""
         return [
             {"source_id": n, "cidade": s.cidade, "uf": s.uf, "descricao": s.descricao, "ultima_coleta": runs.get(n)}
             for n, s in spiders.items()

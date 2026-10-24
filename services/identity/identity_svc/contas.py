@@ -1,4 +1,8 @@
-"""Cadastro, login por sessão (cookie) e autoatendimento de API keys."""
+"""Cadastro, login por sessão (cookie), autoatendimento de API keys e administração de usuários.
+
+Toda conta nasce bloqueada. Com SMTP, libera ao confirmar o e-mail; sem SMTP, quando
+uma administradora aprova. O campo `email_verificado` guarda essa liberação.
+"""
 
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -13,7 +17,7 @@ from sqlalchemy.orm import Session
 from identity_svc.config import IdentitySettings
 from identity_svc.correio import envia_confirmacao
 from identity_svc.keys import generate_key
-from identity_svc.models import ApiKey, Sessao, Tenant, UsoDiario, Usuario, Verificacao
+from identity_svc.models import Administrador, ApiKey, Sessao, Tenant, UsoDiario, Usuario, Verificacao
 from identity_svc.seguranca import SENHA_FALSA, confere_senha, hash_senha, hash_token, novo_token
 
 COOKIE = "mbd_sessao"
@@ -72,6 +76,30 @@ class ContaOut(BaseModel):
     limite_diario: int
     consultas_hoje: int
     criado_em: datetime
+    admin: bool
+
+
+class UsuarioAdmin(BaseModel):
+    id: str
+    tenant_id: str
+    nome: str
+    email: str
+    organizacao: str | None
+    uso_pretendido: str
+    liberado: bool
+    ativo: bool
+    admin: bool
+    limite_diario: int
+    consultas_hoje: int
+    criado_em: datetime
+
+
+class UsuarioAdminIn(BaseModel):
+    liberado: bool | None = None
+    ativo: bool | None = None
+    admin: bool | None = None
+    # 0 libera consultas ilimitadas; nulo volta ao padrão.
+    limite_diario: int | None = Field(default=None, ge=0)
 
 
 class ApiKeyIn(BaseModel):
@@ -118,6 +146,10 @@ def usuario_da_sessao(db: Session, token: str | None) -> Usuario | None:
     return usuario
 
 
+def eh_admin(db: Session, usuario_id: str) -> bool:
+    return db.get(Administrador, usuario_id) is not None
+
+
 def _aware(dt: datetime) -> datetime:
     # SQLite devolve datas sem fuso; o Postgres devolve com fuso.
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -133,6 +165,27 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             raise HTTPException(status_code=401, detail="faça login para continuar")
         return usuario
 
+    def admin_logado(usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)) -> Usuario:
+        if not eh_admin(db, usuario.id):
+            raise HTTPException(status_code=403, detail="acesso restrito à administração")
+        return usuario
+
+    def _para_admin(db: Session, u: Usuario) -> UsuarioAdmin:
+        return UsuarioAdmin(
+            id=u.id,
+            tenant_id=u.tenant_id,
+            nome=u.nome,
+            email=u.email,
+            organizacao=u.organizacao,
+            uso_pretendido=u.uso_pretendido,
+            liberado=u.email_verificado,
+            ativo=u.ativo,
+            admin=eh_admin(db, u.id),
+            limite_diario=limite_do_tenant(db, settings, u.tenant_id),
+            consultas_hoje=consultas_hoje(db, u.tenant_id),
+            criado_em=u.criado_em,
+        )
+
     @router.post("/v1/contas", status_code=201)
     def cadastrar(body: CadastroIn, tarefas: BackgroundTasks, db: Session = Depends(get_db)):
         if db.scalar(select(Usuario).where(Usuario.email == body.email)):
@@ -147,7 +200,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             senha_hash=hash_senha(body.senha),
             organizacao=(body.organizacao or "").strip() or None,
             uso_pretendido=body.uso_pretendido.value,
-            email_verificado=not email_obrigatorio,
+            email_verificado=False,
         )
         db.add(usuario)
         db.flush()
@@ -156,7 +209,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             db.add(Verificacao(token_hash=digest, usuario_id=usuario.id, expira_em=utcnow() + timedelta(hours=24)))
             tarefas.add_task(envia_confirmacao, settings, usuario.email, usuario.nome, token)
         db.commit()
-        return {"verificacao_necessaria": email_obrigatorio}
+        return {"verificacao_necessaria": email_obrigatorio, "aprovacao_necessaria": not email_obrigatorio}
 
     @router.post("/v1/contas/verificar")
     def verificar(body: TokenIn, db: Session = Depends(get_db)):
@@ -187,7 +240,9 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
         if not usuario.ativo:
             raise HTTPException(status_code=403, detail="conta desativada")
         if not usuario.email_verificado:
-            raise HTTPException(status_code=403, detail="confirme seu e-mail antes de entrar")
+            if db.scalar(select(Verificacao).where(Verificacao.usuario_id == usuario.id)):
+                raise HTTPException(status_code=403, detail="confirme seu e-mail antes de entrar")
+            raise HTTPException(status_code=403, detail="sua conta aguarda aprovação da administração")
         usuario.falhas_login = 0
         usuario.bloqueado_ate = None
         agora = utcnow()
@@ -227,7 +282,47 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             limite_diario=limite_do_tenant(db, settings, usuario.tenant_id),
             consultas_hoje=consultas_hoje(db, usuario.tenant_id),
             criado_em=usuario.criado_em,
+            admin=eh_admin(db, usuario.id),
         )
+
+    @router.get("/v1/conta/admin/usuarios", response_model=list[UsuarioAdmin])
+    def listar_usuarios(_: Usuario = Depends(admin_logado), db: Session = Depends(get_db)):
+        return [_para_admin(db, u) for u in db.scalars(select(Usuario).order_by(Usuario.criado_em.desc()))]
+
+    @router.patch("/v1/conta/admin/usuarios/{usuario_id}", response_model=UsuarioAdmin)
+    def alterar_usuario(
+        usuario_id: str,
+        body: UsuarioAdminIn,
+        eu: Usuario = Depends(admin_logado),
+        db: Session = Depends(get_db),
+    ):
+        alvo = db.get(Usuario, usuario_id)
+        if alvo is None:
+            raise HTTPException(status_code=404, detail="usuário não encontrado")
+        mudancas = body.model_dump(exclude_unset=True)
+        if alvo.id == eu.id and (mudancas.get("admin") is False or mudancas.get("ativo") is False):
+            raise HTTPException(status_code=400, detail="você não pode tirar seu próprio acesso")
+        if "liberado" in mudancas:
+            alvo.email_verificado = bool(mudancas["liberado"])
+        if "ativo" in mudancas:
+            alvo.ativo = bool(mudancas["ativo"])
+        if "limite_diario" in mudancas:
+            alvo.limite_diario = mudancas["limite_diario"]
+        if "admin" in mudancas:
+            atual = db.get(Administrador, alvo.id)
+            if mudancas["admin"] and atual is None:
+                db.add(Administrador(usuario_id=alvo.id))
+            elif not mudancas["admin"] and atual is not None:
+                db.delete(atual)
+        if mudancas.get("ativo") is False:
+            # Bloquear derruba as sessões abertas na hora.
+            for sessao in db.scalars(select(Sessao).where(Sessao.usuario_id == alvo.id)):
+                db.delete(sessao)
+        db.commit()
+        return _para_admin(db, alvo)
+
+    if not settings.api_keys_habilitadas:
+        return router
 
     @router.get("/v1/conta/api-keys", response_model=list[ApiKeyOut])
     def minhas_chaves(usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)):

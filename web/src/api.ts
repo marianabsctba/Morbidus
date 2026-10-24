@@ -1,4 +1,4 @@
-// Cliente do gateway. O painel usa a sessão (cookie HttpOnly); API keys são para integrações.
+// Cliente do gateway. O painel usa a sessão (cookie HttpOnly); não há acesso por API key.
 
 export type Status = "obito_confirmado" | "sinal_forte" | "sinal_fraco" | "sem_registro";
 
@@ -70,7 +70,7 @@ export interface Fonte {
   cidade: string;
   uf: string;
   descricao: string;
-  ultima_coleta: { status: string; entradas_publicadas?: number; fim?: string } | null;
+  ultima_coleta: { status: string; entradas_publicadas?: number; fim?: string; erro?: string } | null;
 }
 
 export interface Conta {
@@ -81,6 +81,30 @@ export interface Conta {
   limite_diario: number;
   consultas_hoje: number;
   criado_em: string;
+  admin: boolean;
+}
+
+export interface UsuarioAdmin {
+  id: string;
+  tenant_id: string;
+  nome: string;
+  email: string;
+  organizacao: string | null;
+  uso_pretendido: UsoPretendido;
+  liberado: boolean;
+  ativo: boolean;
+  admin: boolean;
+  limite_diario: number;
+  consultas_hoje: number;
+  criado_em: string;
+}
+
+export type UsuarioAdminIn = Partial<Pick<UsuarioAdmin, "liberado" | "ativo" | "admin">> & {
+  limite_diario?: number | null;
+};
+
+export interface AuditEntryGeral extends AuditEntry {
+  tenant_id: string;
 }
 
 export interface CadastroIn {
@@ -90,14 +114,6 @@ export interface CadastroIn {
   organizacao?: string;
   uso_pretendido: UsoPretendido;
   aceite_termos: boolean;
-}
-
-export interface ApiKey {
-  id: string;
-  nome: string;
-  prefixo: string;
-  criado_em: string;
-  revogada_em: string | null;
 }
 
 export class NaoAutorizado extends Error {}
@@ -126,16 +142,21 @@ const json = (method: string, body?: unknown): RequestInit => ({
 });
 
 export const api = {
-  cadastrar: (body: CadastroIn) => chamar<{ verificacao_necessaria: boolean }>("/v1/contas", json("POST", body)),
+  cadastrar: (body: CadastroIn) => chamar<{ verificacao_necessaria: boolean; aprovacao_necessaria: boolean }>("/v1/contas", json("POST", body)),
   verificar: (token: string) => chamar<{ ok: boolean }>("/v1/contas/verificar", json("POST", { token })),
   entrar: (email: string, senha: string) => chamar<{ nome: string }>("/v1/sessao", json("POST", { email, senha })),
   sair: () => chamar<void>("/v1/sessao", json("DELETE")),
   conta: () => chamar<Conta>("/v1/conta"),
-  chaves: () => chamar<ApiKey[]>("/v1/conta/api-keys"),
-  gerarChave: (nome: string) => chamar<ApiKey & { chave: string }>("/v1/conta/api-keys", json("POST", { nome })),
-  revogarChave: (id: string) => chamar<void>(`/v1/conta/api-keys/${id}`, json("DELETE")),
   consultar: (body: ConsultaIn) => chamar<ConsultaOut>("/v1/consultas", json("POST", body)),
   auditoria: (offset = 0, limit = 25) => chamar<AuditEntry[]>(`/v1/auditoria?limit=${limit}&offset=${offset}`),
   estatisticas: () => chamar<Estatisticas>("/v1/estatisticas"),
+  // Só administradores.
   fontes: () => chamar<Fonte[]>("/v1/sources"),
+  usuarios: () => chamar<UsuarioAdmin[]>("/v1/conta/admin/usuarios"),
+  alterarUsuario: (id: string, body: UsuarioAdminIn) =>
+    chamar<UsuarioAdmin>(`/v1/conta/admin/usuarios/${id}`, json("PATCH", body)),
+  auditoriaGeral: (offset = 0, limit = 50, tenantId?: string) =>
+    chamar<AuditEntryGeral[]>(
+      `/v1/auditoria/geral?limit=${limit}&offset=${offset}${tenantId ? `&tenant_id=${tenantId}` : ""}`,
+    ),
 };

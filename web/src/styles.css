@@ -510,3 +510,18 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
   .fonte-item { grid-template-columns: auto 1fr; }
   .fonte-item .etiqueta { grid-column: 2; justify-self: start; }
 }
+
+/* ---------- Administração ---------- */
+
+.abas-pagina { margin: 0 0 22px; }
+.contador {
+  display: inline-block; margin-left: 8px; min-width: 20px; padding: 0 6px; border-radius: 999px;
+  background: var(--sangue); color: #fff; font-family: var(--f-dado); font-size: 11px; line-height: 20px; text-align: center;
+}
+.tabela td.acoes { white-space: nowrap; text-align: right; }
+.tabela td.acoes .botao + .botao { margin-left: 6px; }
+select.mini {
+  background: #080203; border: 1px solid var(--borda); border-radius: var(--raio);
+  padding: 5px 8px; font-family: var(--f-dado); font-size: 12px;
+}
+.erro-fonte { color: var(--sangue) !important; }

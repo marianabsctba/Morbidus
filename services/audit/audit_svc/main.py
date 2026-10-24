@@ -9,7 +9,7 @@ from morbidus_common.bus import EventBus, make_bus
 from morbidus_common.db import make_engine
 from morbidus_common.events import QueryPerformed, Topics
 from morbidus_common.logging import setup_logging
-from morbidus_common.web import TenantContext, create_app, require_tenant
+from morbidus_common.web import TenantContext, create_app, require_admin, require_tenant
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
@@ -28,6 +28,10 @@ class AuditEntryOut(BaseModel):
     score: float
     fontes_consultadas: list[str]
     ocorrido_em: datetime
+
+
+class AuditEntryGeralOut(AuditEntryOut):
+    tenant_id: str
 
 
 def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None):
@@ -88,6 +92,24 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
                 .limit(limit)
                 .offset(offset)
             )
+            return db.scalars(stmt).all()
+
+    @app.get("/v1/auditoria/geral", response_model=list[AuditEntryGeralOut])
+    def listar_geral(
+        _: TenantContext = Depends(require_admin),
+        tenant_id: str | None = Query(None, description="Filtra por uma conta"),
+        status: str | None = Query(None),
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+    ):
+        """Todas as consultas de todas as contas. Só administradores."""
+        with sessions() as db:
+            stmt = select(AuditEntry)
+            if tenant_id:
+                stmt = stmt.where(AuditEntry.tenant_id == tenant_id)
+            if status:
+                stmt = stmt.where(AuditEntry.status == status)
+            stmt = stmt.order_by(AuditEntry.ocorrido_em.desc()).limit(limit).offset(offset)
             return db.scalars(stmt).all()
 
     return app

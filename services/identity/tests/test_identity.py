@@ -8,7 +8,7 @@ ADMIN = {"X-Admin-Token": "segredo-admin"}
 
 @pytest.fixture
 def client():
-    settings = IdentitySettings(database_url="sqlite:///:memory:", admin_token="segredo-admin")
+    settings = IdentitySettings(database_url="sqlite:///:memory:", admin_token="segredo-admin", api_keys_habilitadas=True)
     with TestClient(build_app(settings)) as c:
         yield c
 

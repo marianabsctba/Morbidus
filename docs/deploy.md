@@ -34,12 +34,13 @@ Suba:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Crie o primeiro cliente e a API key (de um IP liberado em `ADMIN_ALLOWED_IPS`):
+Crie sua conta pelo painel e promova-a a administradora, de dentro do servidor:
 
 ```bash
-curl -X POST https://$DOMAIN/v1/admin/tenants -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"nome": "BeSafe"}'
-curl -X POST https://$DOMAIN/v1/admin/tenants/<tenant_id>/api-keys -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"nome": "painel"}'
+curl -X PATCH http://127.0.0.1:8090/v1/admin/usuarios/<seu-email> -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"admin": true, "email_verificado": true}'
 ```
+
+Para exigir confirmação de e-mail no cadastro, rode `./scripts/configurar-smtp.sh`. Sem SMTP, as contas novas esperam aprovação na área de Administração.
 
 Popular a base com o histórico das fontes (leva horas):
 

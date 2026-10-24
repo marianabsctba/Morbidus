@@ -10,6 +10,8 @@ class IdentitySettings(ServiceSettings):
 
     # Consultas por dia para cada conta (painel e API keys somados).
     limite_diario_padrao: int = 50
+    # Acesso por API key desligado: só o painel (sessão) consulta. Ligue só para parceiros específicos.
+    api_keys_habilitadas: bool = False
     max_api_keys_por_conta: int = 5
     sessao_horas: int = 12
     # Desligue só em desenvolvimento sem HTTPS fora de localhost.

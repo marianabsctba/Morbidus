@@ -56,6 +56,15 @@ class Usuario(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Administrador(Base):
+    """Usuários com acesso à área de administração. Tabela à parte para não alterar `usuarios`."""
+
+    __tablename__ = "administradores"
+
+    usuario_id: Mapped[str] = mapped_column(ForeignKey("usuarios.id"), primary_key=True)
+    desde: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Sessao(Base):
     __tablename__ = "sessoes"
 

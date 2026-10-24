@@ -16,7 +16,7 @@ Obituários não trazem CPF. Por isso, um match por obituário é sempre um **si
 ## Arquitetura
 
 ```
-Clientes (API) ──► Traefik (API key + rate limit) ──► query-svc ──► provider-svc
+Painel (sessão) ──► Traefik (login + cota + rate limit) ──► query-svc ──► provider-svc
                               │                          │
                               └──► audit-svc             └──► OpenSearch
                                                                ▲
@@ -27,7 +27,7 @@ crawler-svc ──(obituary.raw)──► Kafka ──► resolver-svc ───
 
 | Serviço | Papel |
 | --- | --- |
-| `identity` | Tenants, API keys (só o hash fica salvo) e o `forwardAuth` do gateway |
+| `identity` | Contas (cadastro com confirmação de e-mail ou aprovação), sessões, papel de administradora, cota diária e o `forwardAuth` do gateway |
 | `query` | Consulta por CPF e/ou nome, calcula o score e publica `query.performed` |
 | `provider` | Interface única para provedores oficiais, com cache e circuit breaker |
 | `crawler` | Um spider por fonte, respeita `robots.txt`, guarda o HTML bruto em volume ou S3 |
@@ -43,23 +43,18 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Criar um cliente e uma API key:
+Crie sua conta pelo painel em `http://localhost:8080` e promova-a a administradora:
 
 ```bash
-curl -X POST localhost:8080/v1/admin/tenants -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"nome": "Banco Exemplo"}'
-curl -X POST localhost:8080/v1/admin/tenants/<tenant_id>/api-keys -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"nome": "producao"}'
+curl -X PATCH localhost:8080/v1/admin/usuarios/<seu-email> -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"admin": true, "email_verificado": true}'
 ```
+
+As próximas contas são liberadas pela confirmação de e-mail (com SMTP configurado, ver `scripts/configurar-smtp.sh`) ou pela aprovação na área de Administração do painel. O acesso por API key fica desligado (`API_KEYS_HABILITADAS=false`) para evitar abuso: toda consulta passa pelo painel, com login, cota diária e auditoria.
 
 O crawler coleta as novidades de todas as fontes a cada `CRAWL_INTERVAL_MINUTES`. Para percorrer o histórico completo (o crawler não fica exposto no gateway):
 
 ```bash
 docker compose exec crawler python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8000/v1/backfill', method='POST')).read())"
-```
-
-Consultar:
-
-```bash
-curl -X POST localhost:8080/v1/consultas -H "X-API-Key: <chave>" -H "Content-Type: application/json" -d '{"nome": "Beltrana Ficticia de Souza", "uf": "PR", "cidade": "Curitiba", "finalidade": "onboarding"}'
 ```
 
 O campo `finalidade` é obrigatório e fica registrado na auditoria (base legal na LGPD).

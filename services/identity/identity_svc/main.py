@@ -13,9 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from identity_svc.config import IdentitySettings
-from identity_svc.contas import build_router, hoje, limite_do_tenant, usuario_da_sessao
+from identity_svc.contas import build_router, eh_admin, hoje, limite_do_tenant, usuario_da_sessao
 from identity_svc.keys import generate_key, hash_key, parse_prefix
-from identity_svc.models import ApiKey, Base, Tenant, UsoDiario, Usuario
+from identity_svc.models import Administrador, ApiKey, Base, Tenant, UsoDiario, Usuario
 
 
 class TenantIn(BaseModel):
@@ -55,6 +55,7 @@ class UsuarioAdminIn(BaseModel):
     email_verificado: bool | None = None
     # 0 libera consultas ilimitadas; nulo volta ao padrão.
     limite_diario: int | None = Field(default=None, ge=0)
+    admin: bool | None = None
 
 
 def build_app(settings: IdentitySettings | None = None):
@@ -126,8 +127,15 @@ def build_app(settings: IdentitySettings | None = None):
         usuario = db.scalar(select(Usuario).where(Usuario.email == email.lower()))
         if not usuario:
             raise HTTPException(status_code=404, detail="usuário não encontrado")
-        for campo, valor in body.model_dump(exclude_unset=True).items():
+        mudancas = body.model_dump(exclude_unset=True)
+        admin = mudancas.pop("admin", None)
+        for campo, valor in mudancas.items():
             setattr(usuario, campo, valor)
+        atual = db.get(Administrador, usuario.id)
+        if admin and atual is None:
+            db.add(Administrador(usuario_id=usuario.id))
+        elif admin is False and atual is not None:
+            db.delete(atual)
         db.commit()
         return usuario
 
@@ -143,6 +151,8 @@ def build_app(settings: IdentitySettings | None = None):
     ):
         """forwardAuth do gateway: aceita API key ou sessão do painel e aplica a cota diária."""
         key_id = ""
+        if x_api_key and not settings.api_keys_habilitadas:
+            raise HTTPException(status_code=401, detail="acesso por API desativado; use o painel")
         if x_api_key:
             prefixo = parse_prefix(x_api_key)
             key = db.scalar(select(ApiKey).where(ApiKey.prefixo == prefixo)) if prefixo else None
@@ -154,6 +164,8 @@ def build_app(settings: IdentitySettings | None = None):
                 raise HTTPException(status_code=401, detail="API key inválida")
             tenant_id, key_id = key.tenant_id, key.id
             usuario = db.scalar(select(Usuario).where(Usuario.tenant_id == tenant_id))
+            if usuario is not None and not usuario.email_verificado:
+                raise HTTPException(status_code=403, detail="conta aguardando liberação")
             if usuario is not None and not usuario.ativo:
                 raise HTTPException(status_code=403, detail="conta desativada")
         else:
@@ -174,7 +186,10 @@ def build_app(settings: IdentitySettings | None = None):
             db.merge(uso)
             db.commit()
 
-        # Sempre devolve os dois cabeçalhos, para o gateway sobrescrever o que o cliente mandar.
-        return Response(status_code=200, headers={"X-Tenant-Id": tenant.id, "X-Api-Key-Id": key_id})
+        papel = "admin" if usuario is not None and eh_admin(db, usuario.id) else ""
+        # Sempre devolve todos os cabeçalhos, para o gateway sobrescrever o que o cliente mandar.
+        return Response(
+            status_code=200, headers={"X-Tenant-Id": tenant.id, "X-Api-Key-Id": key_id, "X-Papel": papel}
+        )
 
     return app

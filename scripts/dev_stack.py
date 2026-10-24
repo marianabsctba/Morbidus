@@ -4,8 +4,8 @@
 
 Faz o papel do Traefik: valida a API key no identity-svc e injeta X-Tenant-Id.
 O índice de busca é carregado da base local montada por scripts/coletar.py.
-Na primeira execução cria um tenant de desenvolvimento e grava a API key em
-.dev-api-key (ignorado pelo git). Não use em produção.
+Crie a conta pelo próprio painel; sem SMTP, libere-a com
+PATCH /v1/admin/usuarios/<email> (X-Admin-Token). Não use em produção.
 """
 
 import asyncio
@@ -45,7 +45,6 @@ from starlette.routing import Route  # noqa: E402
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "dev-admin")
 BASE_LOCAL = f"sqlite:///{RAIZ / 'morbidus_local.db'}"
-CHAVE_DEV = RAIZ / ".dev-api-key"
 WEB_DIST = RAIZ / "web" / "dist"
 
 bus, index = InMemoryBus(), InMemoryDeathIndex()
@@ -81,7 +80,7 @@ ROTAS = [
     ("/v1/estatisticas", "resolver", True, {"GET"}),
     ("/v1/sources", "crawler", True, {"GET"}),
 ]
-_SEM_REPASSE = {"host", "content-length", "x-tenant-id", "x-api-key-id", "transfer-encoding", "content-encoding"}
+_SEM_REPASSE = {"host", "content-length", "x-tenant-id", "x-api-key-id", "x-papel", "transfer-encoding", "content-encoding"}
 
 
 async def gateway(request: Request) -> Response:
@@ -104,6 +103,7 @@ async def gateway(request: Request) -> Response:
             return JSONResponse(auth.json(), status_code=auth.status_code)
         headers["X-Tenant-Id"] = auth.headers["x-tenant-id"]
         headers["X-Api-Key-Id"] = auth.headers["x-api-key-id"]
+        headers["X-Papel"] = auth.headers.get("x-papel", "")
     resp = await clients[servico].request(
         request.method, caminho, params=request.query_params, headers=headers, content=await request.body()
     )
@@ -121,18 +121,6 @@ def _web(caminho: str) -> Response:
     if arquivo.is_file() and WEB_DIST in arquivo.parents:
         return FileResponse(arquivo)
     return FileResponse(WEB_DIST / "index.html")
-
-
-async def _garantir_chave_dev() -> None:
-    if CHAVE_DEV.exists():
-        return
-    admin = {"X-Admin-Token": ADMIN_TOKEN}
-    tenant = (await clients["identity"].post("/v1/admin/tenants", json={"nome": "Desenvolvimento"}, headers=admin)).json()
-    chave = await clients["identity"].post(
-        f"/v1/admin/tenants/{tenant['id']}/api-keys", json={"nome": "painel-dev"}, headers=admin
-    )
-    CHAVE_DEV.write_text(chave.json()["chave"], encoding="utf-8")
-    print(f"API key de desenvolvimento gravada em {CHAVE_DEV.name}")
 
 
 _ultima_carga = None
@@ -165,7 +153,6 @@ async def lifespan(app):
         for sub in apps.values():
             await stack.enter_async_context(sub.router.lifespan_context(sub))
         print(f"Índice carregado com {_carregar_indice()} registros da base local")
-        await _garantir_chave_dev()
         recarga = asyncio.create_task(_recarregar_periodicamente())
         yield
         recarga.cancel()

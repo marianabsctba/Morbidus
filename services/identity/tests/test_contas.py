@@ -16,6 +16,7 @@ CONSULTA = {"X-Forwarded-Method": "POST", "X-Forwarded-Uri": "/v1/consultas"}
 
 
 def _client(**extra) -> TestClient:
+    extra.setdefault("api_keys_habilitadas", True)
     settings = IdentitySettings(
         database_url="sqlite:///:memory:", admin_token="adm", cookie_secure=False, limite_diario_padrao=2, **extra
     )
@@ -28,14 +29,26 @@ def client():
         yield c
 
 
+def _cadastrar_e_liberar(client, cadastro=CADASTRO):
+    assert client.post("/v1/contas", json=cadastro).status_code == 201
+    email = cadastro["email"].lower()
+    assert client.patch(f"/v1/admin/usuarios/{email}", json={"email_verificado": True}, headers={"X-Admin-Token": "adm"}).status_code == 200
+
+
 def _entrar(client, senha=CADASTRO["senha"]):
     return client.post("/v1/sessao", json={"email": "analista@exemplo.com", "senha": senha})
 
 
 def test_cadastro_login_e_conta(client):
     resp = client.post("/v1/contas", json=CADASTRO)
-    assert resp.status_code == 201 and resp.json() == {"verificacao_necessaria": False}
+    assert resp.status_code == 201
+    assert resp.json() == {"verificacao_necessaria": False, "aprovacao_necessaria": True}
     assert client.post("/v1/contas", json=CADASTRO).status_code == 409
+
+    # Sem SMTP, a conta só entra depois de aprovada.
+    pendente = _entrar(client)
+    assert pendente.status_code == 403 and "aprovação" in pendente.json()["detail"]
+    client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"email_verificado": True}, headers={"X-Admin-Token": "adm"})
 
     login = _entrar(client)
     assert login.status_code == 200
@@ -56,7 +69,7 @@ def test_validacoes_do_cadastro(client):
 
 
 def test_sessao_passa_no_forwardauth_e_cota_diaria(client):
-    client.post("/v1/contas", json=CADASTRO)
+    _cadastrar_e_liberar(client)
     assert client.get("/auth/verify").status_code == 401
     _entrar(client)
 
@@ -72,7 +85,7 @@ def test_sessao_passa_no_forwardauth_e_cota_diaria(client):
 
 
 def test_api_key_self_service_soma_na_mesma_cota(client):
-    client.post("/v1/contas", json=CADASTRO)
+    _cadastrar_e_liberar(client)
     _entrar(client)
     nova = client.post("/v1/conta/api-keys", json={"nome": "integração"}).json()
     assert nova["chave"].startswith("mbd_")
@@ -93,14 +106,14 @@ def test_api_key_self_service_soma_na_mesma_cota(client):
 
 
 def test_bloqueio_apos_senhas_erradas(client):
-    client.post("/v1/contas", json=CADASTRO)
+    _cadastrar_e_liberar(client)
     for _ in range(5):
         assert _entrar(client, senha="errada-errada").status_code == 401
     assert _entrar(client).status_code == 429
 
 
 def test_admin_libera_limite(client):
-    client.post("/v1/contas", json=CADASTRO)
+    _cadastrar_e_liberar(client)
     adm = {"X-Admin-Token": "adm"}
     assert client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"limite_diario": 0}, headers=adm).status_code == 200
     _entrar(client)
@@ -144,8 +157,58 @@ def test_confirmacao_de_email(monkeypatch):
     enviados = []
     monkeypatch.setattr(contas, "envia_confirmacao", lambda s, para, nome, token: enviados.append(token))
     with _client(smtp_host="smtp.exemplo") as client:
-        assert client.post("/v1/contas", json=CADASTRO).json() == {"verificacao_necessaria": True}
+        assert client.post("/v1/contas", json=CADASTRO).json() == {"verificacao_necessaria": True, "aprovacao_necessaria": False}
         assert _entrar(client).status_code == 403
         assert client.post("/v1/contas/verificar", json={"token": "falso"}).status_code == 400
         assert client.post("/v1/contas/verificar", json={"token": enviados[0]}).status_code == 200
         assert _entrar(client).status_code == 200
+
+
+def test_admin_aprova_bloqueia_e_ve_todos(client):
+    outra = {**CADASTRO, "email": "outra@exemplo.com", "nome": "Outra Pessoa"}
+    _cadastrar_e_liberar(client)
+    client.post("/v1/contas", json=outra)
+    _entrar(client)
+    # Sem papel de admin, a área é negada.
+    assert client.get("/v1/conta/admin/usuarios").status_code == 403
+    assert client.get("/auth/verify").headers["X-Papel"] == ""
+
+    client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"admin": True}, headers={"X-Admin-Token": "adm"})
+    assert client.get("/v1/conta").json()["admin"] is True
+    assert client.get("/auth/verify").headers["X-Papel"] == "admin"
+
+    usuarios = {u["email"]: u for u in client.get("/v1/conta/admin/usuarios").json()}
+    assert usuarios["outra@exemplo.com"]["liberado"] is False
+    eu = usuarios["analista@exemplo.com"]
+    assert client.patch(f"/v1/conta/admin/usuarios/{eu['id']}", json={"admin": False}).status_code == 400
+
+    alvo = usuarios["outra@exemplo.com"]["id"]
+    aprovada = client.patch(f"/v1/conta/admin/usuarios/{alvo}", json={"liberado": True, "limite_diario": 0}).json()
+    assert aprovada["liberado"] is True and aprovada["limite_diario"] == 0
+
+    client.cookies.clear()
+    assert client.post("/v1/sessao", json={"email": "outra@exemplo.com", "senha": CADASTRO["senha"]}).status_code == 200
+    client.cookies.clear()
+    _entrar(client)
+    client.patch(f"/v1/conta/admin/usuarios/{alvo}", json={"ativo": False})
+    client.cookies.clear()
+    assert client.post("/v1/sessao", json={"email": "outra@exemplo.com", "senha": CADASTRO["senha"]}).status_code == 403
+
+
+def test_api_key_de_conta_pendente_nao_passa(client):
+    _cadastrar_e_liberar(client)
+    _entrar(client)
+    chave = client.post("/v1/conta/api-keys", json={"nome": "x1"}).json()["chave"]
+    client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"email_verificado": False}, headers={"X-Admin-Token": "adm"})
+    client.cookies.clear()
+    assert client.get("/auth/verify", headers={"X-API-Key": chave}).status_code == 403
+
+
+def test_api_desligada_por_padrao():
+    with _client(api_keys_habilitadas=False) as client:
+        _cadastrar_e_liberar(client)
+        _entrar(client)
+        assert client.post("/v1/conta/api-keys", json={"nome": "x1"}).status_code in (404, 405)
+        assert client.get("/v1/conta/api-keys").status_code == 404
+        client.cookies.clear()
+        assert client.get("/auth/verify", headers={"X-API-Key": "mbd_qualquer_coisa"}).status_code == 401

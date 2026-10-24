@@ -5,27 +5,31 @@ import { dataHoraBr, numero } from "../util";
 
 const COBERTURA_ROTULO = { ativo: "Fonte ativa", pendente: "Fonte pendente", sem_fonte: "Sem fonte aberta" };
 
-export default function Cobertura({ tratarErro }: { tratarErro: (e: unknown) => string }) {
+type Props = { tratarErro: (e: unknown) => string; admin: boolean };
+
+export default function Cobertura({ tratarErro, admin }: Props) {
   const [stats, setStats] = useState<Estatisticas | null>(null);
   const [fontes, setFontes] = useState<Fonte[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [uf, setUf] = useState("PR");
 
   useEffect(() => {
-    Promise.all([api.estatisticas(), api.fontes()])
+    // A lista de fontes é interna: só administradores recebem.
+    Promise.all([api.estatisticas(), admin ? api.fontes() : Promise.resolve([] as Fonte[])])
       .then(([s, f]) => {
         setStats(s);
         setFontes(f);
         if (s.por_uf[0]) setUf(s.por_uf[0].uf);
       })
       .catch((e) => setErro(tratarErro(e)));
-  }, [tratarErro]);
+  }, [tratarErro, admin]);
 
   const porUf = useMemo(() => Object.fromEntries((stats?.por_uf ?? []).map((u) => [u.uf, u])), [stats]);
   const maximo = Math.max(1, ...(stats?.por_uf ?? []).map((u) => u.total));
   const ativas = Object.values(CAPITAIS).filter((c) => c.cobertura === "ativo").length;
   const selecionada = CAPITAIS[uf];
   const dadosUf = porUf[uf];
+  const fontesDaUf = fontes.filter((f) => f.uf === uf);
 
   return (
     <>
@@ -52,9 +56,9 @@ export default function Cobertura({ tratarErro }: { tratarErro: (e: unknown) => 
           <div className="sub">as demais dependem de LAI ou parceria</div>
         </div>
         <div className="painel kpi">
-          <div className="rotulo">Fontes coletadas</div>
-          <div className="valor">{fontes.length || "..."}</div>
-          <div className="sub">jornais, cemitérios e serviços funerários</div>
+          <div className="rotulo">Estados com registros</div>
+          <div className="valor">{stats ? stats.por_uf.length : "..."}</div>
+          <div className="sub">de 27 unidades da federação</div>
         </div>
         <div className="painel kpi">
           <div className="rotulo">Última atualização</div>
@@ -115,10 +119,10 @@ export default function Cobertura({ tratarErro }: { tratarErro: (e: unknown) => 
             <div className="rotulo">Registros no estado</div>
             <div className="valor vivo">{numero(dadosUf?.total ?? 0)}</div>
           </div>
-          {selecionada.fontes.length > 0 && (
+          {admin && fontesDaUf.length > 0 && (
             <p style={{ marginTop: 14 }}>
-              <span className="mudo">Fontes: </span>
-              {selecionada.fontes.join(", ")}
+              <span className="mudo">Fontes (visível só para administração): </span>
+              {fontesDaUf.map((f) => f.descricao).join("; ")}
             </p>
           )}
           {selecionada.cobertura !== "ativo" && (
@@ -142,25 +146,6 @@ export default function Cobertura({ tratarErro }: { tratarErro: (e: unknown) => 
         </div>
       </div>
 
-      {fontes.length > 0 && (
-        <div className="fontes-lista">
-          {fontes.map((f) => (
-            <div key={f.source_id} className="fonte-item">
-              <span className="uf-mini">{f.uf}</span>
-              <div className="desc">
-                {f.descricao}
-                <small>
-                  {f.source_id} · {f.cidade}
-                </small>
-              </div>
-              <span className={`etiqueta ${f.ultima_coleta?.status === "erro" ? "sangue" : "osso"}`}>
-                <span className="ponto" />
-                {f.ultima_coleta ? f.ultima_coleta.status : "aguardando"}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </>
   );
 }

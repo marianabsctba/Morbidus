@@ -120,3 +120,12 @@ def test_provider_fora_do_ar_nao_derruba_consulta():
         resp = client.post("/v1/consultas", json={"cpf": CPF_FALECIDO, "finalidade": "onboarding"}, headers=TENANT).json()
     assert resp["status"] == "sem_registro"
     assert resp["fontes_indisponiveis"] == ["provider-svc"]
+
+
+def test_fontes_da_evidencia_so_para_admin(ambiente):
+    client, _ = ambiente
+    corpo = {"nome": "Fulano de Tal da Silva", "uf": "PR", "finalidade": "prevencao_fraude"}
+    comum = client.post("/v1/consultas", json=corpo, headers=TENANT).json()
+    assert "fontes" not in comum["evidencias"][0]["detalhes"]
+    admin = client.post("/v1/consultas", json=corpo, headers={**TENANT, "X-Papel": "admin"}).json()
+    assert admin["evidencias"][0]["detalhes"]["fontes"] == ["https://jornal/x"]
