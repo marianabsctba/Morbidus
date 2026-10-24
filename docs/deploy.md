@@ -59,12 +59,43 @@ Comum quando o MORBiDus divide a máquina com outros sites. O Traefik escuta só
 
 Nessa variante, `/v1/admin` fica bloqueado no nginx. A administração é feita no próprio servidor, contra `http://127.0.0.1:8090`.
 
+## Backup e restore
+
+`scripts/backup.sh` faz o dump dos três bancos (contas, registros de óbito e auditoria) num `.tar` por dia em `/var/backups/morbidus` (só root lê), confere cada dump com `pg_restore --list` e guarda os últimos 14 dias. Instalação no cron do host:
+
+```bash
+echo '30 3 * * * root /opt/morbidus/scripts/backup.sh >> /var/log/morbidus-backup.log 2>&1' > /etc/cron.d/morbidus-backup
+```
+
+O backup fica na mesma máquina: protege contra erro e corrupção de dados, não contra perder o servidor. Copie os arquivos para fora (outro servidor ou armazenamento de objetos) assim que possível; eles têm dados pessoais, então cifre antes de enviar.
+
+Para restaurar um banco (exemplo com o `resolver`):
+
+```bash
+tar -xf /var/backups/morbidus/morbidus-<data>.tar -C /tmp/restore
+docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" resolver && createdb -U "$POSTGRES_USER" resolver'
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d resolver --no-owner' < /tmp/restore/resolver.dump
+docker compose exec -T resolver python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8000/interno/reindexar', method='POST')).read())"
+```
+
+O último comando reconstrói o índice de busca do OpenSearch a partir do banco restaurado.
+
+## Retenção
+
+| Dado | Prazo | Onde |
+| --- | --- | --- |
+| Consultas, IP, user-agent e alertas | 2 anos (`AUDITORIA_RETENCAO_DIAS`, nunca menos de 180 dias) | rotina diária no audit-svc |
+| HTML bruto das fontes | 30 dias (`RAW_RETENTION_DAYS`) | rotina do crawler |
+| Backups | 14 dias (`MORBIDUS_BACKUP_DIAS`) | `scripts/backup.sh` |
+
+A auditoria é append-only: um gatilho no Postgres bloqueia UPDATE e DELETE. A única exceção é a rotina de retenção, que marca a própria transação e só consegue apagar o que passou do prazo.
+
 ## Checklist antes de abrir para usuários
 
 - [ ] Todos os segredos do `.env` trocados (nenhum `troque-...` sobrando)
 - [ ] `ENABLED_PROVIDERS` vazio
 - [ ] HTTPS funcionando e HTTP redirecionando
 - [ ] `/v1/admin` respondendo 403 fora dos IPs liberados
-- [ ] Backup diário dos volumes `pg-data` e `raw-data`
-- [ ] Política de privacidade publicada explicando finalidade, base legal (prevenção à fraude, LGPD art. 7º, IX e art. 11, II, g) e canal do titular
+- [x] Backup diário dos bancos (`scripts/backup.sh`) e cópia para fora do servidor
+- [x] Política de privacidade e termos de uso em `/privacidade`, com aceite registrado e formulário para o encarregado
 - [ ] Encarregado (DPO) definido para atender pedidos de titulares
