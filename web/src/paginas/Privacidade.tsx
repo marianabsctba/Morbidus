@@ -7,7 +7,7 @@ import { Marca } from "../componentes";
 export const VERSAO = "2026-10-24";
 export const CONTROLADOR = "BeSafe Academy";
 // LGPD, art. 41, §1º: identidade e canal do encarregado públicos. O canal é o formulário abaixo.
-export const ENCARREGADA = "Mariana B., advogada";
+export const ENCARREGADA = "Mariana B., advogada e engenheira de cibersegurança";
 
 export default function Privacidade({ aoVoltar }: { aoVoltar?: () => void }) {
   return (
