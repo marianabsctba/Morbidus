@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["services", "tests"]
+pythonpath = [
+    "services/identity",
+    "services/provider",
+    "services/crawler",
+    "services/resolver",
+    "services/query",
+    "services/audit",
+]
+addopts = "--import-mode=importlib"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

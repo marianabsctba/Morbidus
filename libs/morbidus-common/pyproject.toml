@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "morbidus-common"
+version = "0.1.0"
+description = "Código compartilhado entre os microsserviços do MORBiDus"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy>=2.0",
+    "rapidfuzz>=3.6",
+    "aiokafka>=0.10",
+    "opensearch-py>=2.4",
+    "prometheus-fastapi-instrumentator>=7.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["morbidus_common*"]

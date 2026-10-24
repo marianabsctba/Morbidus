@@ -1,0 +1,206 @@
+# MORBiDus, fase 1. Dead identities. Living fraud.
+#   docker compose up -d --build
+#   docker compose --profile obs up -d   (Prometheus + Grafana)
+#
+# Só o Traefik fica exposto (porta 8080). Os serviços conversam pela rede interna.
+
+x-service: &service
+  restart: unless-stopped
+  env_file: .env
+  networks: [morbidus]
+
+x-build: &build
+  context: .
+  dockerfile: infra/docker/service.Dockerfile
+
+services:
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=morbidus
+      - --entrypoints.web.address=:80
+      - --entrypoints.metrics.address=:8082
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=metrics
+      - --accesslog=true
+      - --accesslog.format=json
+    ports:
+      - "8080:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [morbidus]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      retries: 20
+    networks: [morbidus]
+    restart: unless-stopped
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --mode dev-container
+      - --smp 1
+      - --kafka-addr internal://0.0.0.0:9092
+      - --advertise-kafka-addr internal://redpanda:9092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      retries: 30
+    networks: [morbidus]
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - os-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      retries: 30
+    networks: [morbidus]
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 20
+    networks: [morbidus]
+    restart: unless-stopped
+
+  identity:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: identity } }
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/identity
+    depends_on:
+      postgres: { condition: service_healthy }
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.admin.rule=PathPrefix(`/v1/admin`)
+      - traefik.http.routers.admin.entrypoints=web
+      - traefik.http.services.identity.loadbalancer.server.port=8000
+      # Middlewares usados pelas rotas de clientes (query e audit).
+      - traefik.http.middlewares.apikey.forwardauth.address=http://identity:8000/auth/verify
+      - traefik.http.middlewares.apikey.forwardauth.authResponseHeaders=X-Tenant-Id,X-Api-Key-Id
+      - traefik.http.middlewares.ratelimit.ratelimit.average=20
+      - traefik.http.middlewares.ratelimit.ratelimit.burst=40
+      - traefik.http.middlewares.ratelimit.ratelimit.sourcecriterion.requestheadername=X-API-Key
+
+  provider:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: provider } }
+
+  crawler:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: crawler } }
+    environment:
+      BUS_BACKEND: kafka
+      RAW_STORE_BACKEND: minio
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      redpanda: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  resolver:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: resolver } }
+    environment:
+      BUS_BACKEND: kafka
+      SEARCH_BACKEND: opensearch
+      OPENSEARCH_URL: http://opensearch:9200
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/resolver
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+
+  query:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: query } }
+    environment:
+      BUS_BACKEND: kafka
+      SEARCH_BACKEND: opensearch
+      OPENSEARCH_URL: http://opensearch:9200
+      PROVIDER_URL: http://provider:8000
+    depends_on:
+      redpanda: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+      provider: { condition: service_healthy }
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.consultas.rule=PathPrefix(`/v1/consultas`)
+      - traefik.http.routers.consultas.entrypoints=web
+      - traefik.http.routers.consultas.middlewares=apikey@docker,ratelimit@docker
+      - traefik.http.services.query.loadbalancer.server.port=8000
+
+  audit:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: audit } }
+    environment:
+      BUS_BACKEND: kafka
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/audit
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.auditoria.rule=PathPrefix(`/v1/auditoria`)
+      - traefik.http.routers.auditoria.entrypoints=web
+      - traefik.http.routers.auditoria.middlewares=apikey@docker,ratelimit@docker
+      - traefik.http.services.audit.loadbalancer.server.port=8000
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: [obs]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [morbidus]
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    profiles: [obs]
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [morbidus]
+
+networks:
+  morbidus:
+
+volumes:
+  pg-data:
+  redpanda-data:
+  os-data:
+  minio-data:

@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: morbidus
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - identity:8000
+          - provider:8000
+          - crawler:8000
+          - resolver:8000
+          - query:8000
+          - audit:8000
+  - job_name: traefik
+    static_configs:
+      - targets: ["traefik:8082"]
