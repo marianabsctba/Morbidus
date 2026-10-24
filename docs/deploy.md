@@ -47,6 +47,17 @@ Popular a base com o histórico das fontes (leva horas):
 docker compose exec crawler python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8000/v1/backfill', method='POST')).read())"
 ```
 
+## Variante: servidor que já tem nginx nas portas 80/443
+
+Comum quando o MORBiDus divide a máquina com outros sites. O Traefik escuta só em `127.0.0.1` e o nginx do host faz a ponte:
+
+1. Rode `./scripts/gerar-env.sh` e responda **s** à primeira pergunta (gera `TRAEFIK_BIND=127.0.0.1:8090`).
+2. Suba **sem** o overlay de produção: `docker compose up -d --build`.
+3. Copie `infra/nginx/host-site.conf.example` para `/etc/nginx/sites-available/`, ajuste domínio e certificados, ligue em `sites-enabled` e rode `nginx -t && systemctl reload nginx`.
+4. Crie o registro DNS do subdomínio (na Cloudflare, com proxy ligado).
+
+Nessa variante, `/v1/admin` fica bloqueado no nginx. A administração é feita no próprio servidor, contra `http://127.0.0.1:8090`.
+
 ## Checklist antes de abrir para usuários
 
 - [ ] Todos os segredos do `.env` trocados (nenhum `troque-...` sobrando)

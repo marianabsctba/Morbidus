@@ -4,6 +4,8 @@
 #
 # Só o Traefik fica exposto (porta 8080). Os serviços conversam pela rede interna.
 
+name: morbidus
+
 x-service: &service
   restart: unless-stopped
   env_file: .env
@@ -20,6 +22,8 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=morbidus
+      # Só enxerga containers deste projeto, mesmo em host com outros stacks.
+      - --providers.docker.constraints=Label(`com.docker.compose.project`,`morbidus`)
       - --entrypoints.web.address=:80
       - --entrypoints.metrics.address=:8082
       - --metrics.prometheus=true
@@ -27,7 +31,8 @@ services:
       - --accesslog=true
       - --accesslog.format=json
     ports:
-      - "8080:80"
+      # Atrás de um nginx já existente no host, use TRAEFIK_BIND=127.0.0.1:8090.
+      - "${TRAEFIK_BIND:-8080}:80"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [morbidus]
@@ -90,7 +95,7 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "127.0.0.1:9001:9001"
+      - "${MINIO_CONSOLE_BIND:-127.0.0.1:9001}:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -225,6 +230,7 @@ services:
 
 networks:
   morbidus:
+    name: morbidus
 
 volumes:
   pg-data:

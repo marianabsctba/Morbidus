@@ -1,0 +1,38 @@
+# Site do MORBiDus num nginx que já existe no host, atrás da Cloudflare.
+# Copie para /etc/nginx/sites-available/, ajuste server_name e certificados,
+# ligue em sites-enabled e rode: nginx -t && systemctl reload nginx
+#
+# Pressupõe TRAEFIK_BIND=127.0.0.1:8090 no .env do MORBiDus.
+
+server {
+    listen 443 ssl;
+    server_name morbidus.example.com;
+
+    # Certificado de origem da Cloudflare e Authenticated Origin Pull:
+    # só a Cloudflare consegue falar com este servidor.
+    ssl_certificate /etc/ssl/cloudflare/origin.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/origin.key;
+    ssl_client_certificate /etc/ssl/cloudflare/authenticated_origin_pull_ca.pem;
+    ssl_verify_client on;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    server_tokens off;
+    client_max_body_size 1m;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # Administração só pela rede local do servidor (curl em 127.0.0.1:8090).
+    location /v1/admin {
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-For $http_cf_connecting_ip;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+}
