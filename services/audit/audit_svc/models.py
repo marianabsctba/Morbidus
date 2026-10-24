@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from morbidus_common.db import ensure_columns
-from sqlalchemy import JSON, DateTime, Float, Integer, String, text
+from sqlalchemy import JSON, DateTime, Float, Integer, String, delete, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -66,9 +66,19 @@ class IdentidadeConsultada(Base):
 _COLUNAS_NOVAS = {"ip_origem": "VARCHAR(45)", "user_agent": "VARCHAR(300)", "dias_desde_obito": "INTEGER"}
 
 _APPEND_ONLY = [
+    # Única exceção à trava: a rotina de retenção, que marca a própria transação
+    # (SET LOCAL) e só consegue apagar o que passou do prazo. O prazo nunca fica
+    # abaixo de 180 dias, os 6 meses de guarda do Marco Civil (art. 15).
     """
     CREATE OR REPLACE FUNCTION audit_block_mutation() RETURNS trigger AS $$
     BEGIN
+        IF TG_OP = 'DELETE'
+           AND current_setting('morbidus.retencao', true) = 'on'
+           AND OLD.ocorrido_em < now() - make_interval(days => GREATEST(
+               180, COALESCE(NULLIF(current_setting('morbidus.retencao_dias', true), '')::int, 730)))
+        THEN
+            RETURN OLD;
+        END IF;
         RAISE EXCEPTION 'audit_entries é append-only';
     END;
     $$ LANGUAGE plpgsql
@@ -89,3 +99,24 @@ def setup_schema(engine: Engine) -> None:
         with engine.begin() as conn:
             for stmt in _APPEND_ONLY:
                 conn.execute(text(stmt))
+
+
+PISO_RETENCAO_DIAS = 180
+
+
+def aplicar_retencao(engine: Engine, dias: int) -> dict[str, int]:
+    """Apaga o que passou do prazo de guarda: consultas, identidades consultadas e alertas."""
+    dias = max(dias, PISO_RETENCAO_DIAS)
+    limite = datetime.now(timezone.utc) - timedelta(days=dias)
+    apagados = {}
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SELECT set_config('morbidus.retencao', 'on', true)"))
+            conn.execute(text("SELECT set_config('morbidus.retencao_dias', :d, true)"), {"d": str(dias)})
+        for nome, tabela, coluna in (
+            ("consultas", AuditEntry, AuditEntry.ocorrido_em),
+            ("identidades", IdentidadeConsultada, IdentidadeConsultada.ocorrido_em),
+            ("alertas", Alerta, Alerta.criado_em),
+        ):
+            apagados[nome] = conn.execute(delete(tabela).where(coluna < limite)).rowcount
+    return apagados

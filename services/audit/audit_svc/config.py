@@ -3,6 +3,8 @@ from morbidus_common.settings import SmtpSettings
 
 class AuditSettings(SmtpSettings):
     database_url: str = "sqlite:///./audit.db"
+    # Guarda da auditoria (inclui IP e user-agent). Mínimo de 180 dias pelo Marco Civil.
+    auditoria_retencao_dias: int = 730
     # De onde vem a lista de administradoras que recebem os alertas por e-mail.
     identity_url: str = "http://identity:8000"
 

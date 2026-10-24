@@ -95,6 +95,36 @@ class DesafioMfa(Base):
     tentativas: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class Aceite(Base):
+    """Registro de aceite da Política de Privacidade e dos Termos de Uso, por versão."""
+
+    __tablename__ = "aceites"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    usuario_id: Mapped[str] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    versao: Mapped[str] = mapped_column(String(20))
+    aceito_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ip: Mapped[str | None] = mapped_column(String(45), default=None)
+
+
+class SolicitacaoTitular(Base):
+    """Pedido feito ao encarregado (DPO) pelo formulário público. Prova de atendimento à LGPD."""
+
+    __tablename__ = "solicitacoes_titular"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    protocolo: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    email: Mapped[str] = mapped_column(String(254))
+    tipo: Mapped[str] = mapped_column(String(40))
+    mensagem: Mapped[str] = mapped_column(String(4000))
+    status: Mapped[str] = mapped_column(String(15), default="aberta", index=True)
+    observacao: Mapped[str | None] = mapped_column(String(2000), default=None)
+    ip: Mapped[str | None] = mapped_column(String(45), default=None)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    atendido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
 class Sessao(Base):
     __tablename__ = "sessoes"
 

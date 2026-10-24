@@ -12,8 +12,18 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from identity_svc import titulares
 from identity_svc.config import IdentitySettings
-from identity_svc.contas import apaga_mfa, build_router, eh_admin_efetivo, hoje, limite_do_tenant, usuario_da_sessao
+from identity_svc.contas import (
+    aceite_pendente,
+    apaga_mfa,
+    build_router,
+    dependencias,
+    eh_admin_efetivo,
+    hoje,
+    limite_do_tenant,
+    usuario_da_sessao,
+)
 from identity_svc.keys import generate_key, hash_key, parse_prefix
 from identity_svc.models import Administrador, ApiKey, Base, Tenant, UsoDiario, Usuario
 
@@ -143,6 +153,8 @@ def build_app(settings: IdentitySettings | None = None):
         return usuario
 
     app.include_router(build_router(settings, get_db))
+    _, admin_logado = dependencias(get_db)
+    app.include_router(titulares.build_router(settings, get_db, admin_logado))
 
     @app.post("/interno/emails", include_in_schema=False)
     def emails_por_tenant(tenants: list[str], db: Session = Depends(get_db)) -> dict[str, str]:
@@ -188,6 +200,8 @@ def build_app(settings: IdentitySettings | None = None):
             usuario = usuario_da_sessao(db, mbd_sessao)
             if usuario is None:
                 raise HTTPException(status_code=401, detail="faça login para continuar")
+            if aceite_pendente(db, settings, usuario.id):
+                raise HTTPException(status_code=403, detail="aceite a Política de Privacidade e os Termos de Uso para continuar")
             tenant_id = usuario.tenant_id
         tenant = db.get(Tenant, tenant_id)
         if not tenant or not tenant.ativo:

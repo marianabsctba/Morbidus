@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import base64
 import hmac
+import logging
 
 from fastapi import Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -21,8 +22,11 @@ from sqlalchemy.orm import sessionmaker
 from audit_svc.config import AuditSettings
 from audit_svc import cti
 from audit_svc.alertas import avisar_instituicoes, notificar
-from audit_svc.models import Alerta, AuditEntry, IdentidadeConsultada, setup_schema
+from audit_svc.models import Alerta, AuditEntry, IdentidadeConsultada, aplicar_retencao, setup_schema
 from audit_svc.sentinela import ROTULOS, avaliar
+
+
+log = logging.getLogger(__name__)
 
 
 class AuditEntryOut(BaseModel):
@@ -140,11 +144,28 @@ def build_app(settings: AuditSettings | None = None, bus: EventBus | None = None
 
     bus.subscribe(Topics.QUERY_PERFORMED, handle)
 
+    def _reter() -> None:
+        try:
+            apagados = aplicar_retencao(engine, settings.auditoria_retencao_dias)
+            if any(apagados.values()):
+                log.info("retenção da auditoria: %s", apagados)
+        except Exception:
+            log.exception("falha na rotina de retenção da auditoria")
+
+    async def _retencao_diaria() -> None:
+        while True:
+            await asyncio.sleep(24 * 3600)
+            await asyncio.to_thread(_reter)
+
     @asynccontextmanager
     async def lifespan(app):
         setup_schema(engine)
+        # Primeira rodada antes de consumir eventos: sem disputa pela conexão na partida.
+        _reter()
         await bus.start()
+        retencao = asyncio.create_task(_retencao_diaria())
         yield
+        retencao.cancel()
         await bus.stop()
         engine.dispose()
 

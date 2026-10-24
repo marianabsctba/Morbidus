@@ -102,7 +102,7 @@ services:
       - traefik.http.routers.admin.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.services.identity.loadbalancer.server.port=8000
       # Cadastro, login e "Minha conta": públicos, com limite apertado por IP.
-      - traefik.http.routers.contas.rule=PathPrefix(`/v1/conta`) || PathPrefix(`/v1/sessao`)
+      - traefik.http.routers.contas.rule=PathPrefix(`/v1/conta`) || PathPrefix(`/v1/sessao`) || PathPrefix(`/v1/privacidade`)
       - traefik.http.routers.contas.entrypoints=${PUBLIC_ENTRYPOINT:-web}
       - traefik.http.routers.contas.middlewares=ratelimit-contas@docker
       - traefik.http.routers.contas.service=identity

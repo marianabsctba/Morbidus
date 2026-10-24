@@ -16,4 +16,7 @@ class IdentitySettings(SmtpSettings):
     sessao_horas: int = 12
     # Desligue só em desenvolvimento sem HTTPS fora de localhost.
     cookie_secure: bool = True
+    # Versão vigente da Política de Privacidade e dos Termos de Uso. Ao mudar,
+    # todo mundo precisa aceitar de novo antes de consultar.
+    termos_versao: str = "2026-10-24"
     # Confirmação de e-mail: campos SMTP_* herdados de SmtpSettings.

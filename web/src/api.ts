@@ -48,6 +48,28 @@ export interface ConsultaOut {
   alerta_coletivo: { outras_instituicoes: number; janela_dias: number; mensagem: string } | null;
 }
 
+export type TipoSolicitacao =
+  | "acesso"
+  | "correcao"
+  | "eliminacao"
+  | "remocao_registro_obito"
+  | "informacao"
+  | "outro";
+
+export interface Solicitacao {
+  id: string;
+  protocolo: string;
+  nome: string;
+  email: string;
+  tipo: TipoSolicitacao;
+  rotulo: string;
+  mensagem: string;
+  status: "aberta" | "atendida";
+  criado_em: string;
+  atendido_em: string | null;
+  observacao: string | null;
+}
+
 export interface Canario {
   nome: string;
   cidade: string;
@@ -92,6 +114,8 @@ export interface Conta {
   criado_em: string;
   admin: boolean;
   mfa_ativo: boolean;
+  aceite_pendente: boolean;
+  termos_versao: string;
 }
 
 export interface UsuarioAdmin {
@@ -183,12 +207,19 @@ export const api = {
   mfaDesativar: (codigo: string) => chamar<void>("/v1/conta/mfa/desativar", json("POST", { codigo })),
   sair: () => chamar<void>("/v1/sessao", json("DELETE")),
   conta: () => chamar<Conta>("/v1/conta"),
+  aceitarTermos: () => chamar<void>("/v1/conta/aceite", json("POST")),
+  // Público: formulário do encarregado (DPO).
+  solicitar: (body: { nome: string; email: string; tipo: TipoSolicitacao; mensagem: string; site?: string }) =>
+    chamar<{ protocolo: string; prazo_dias: number }>("/v1/privacidade/solicitacoes", json("POST", body)),
   consultar: (body: ConsultaIn) => chamar<ConsultaOut>("/v1/consultas", json("POST", body)),
   auditoria: (offset = 0, limit = 25) => chamar<AuditEntry[]>(`/v1/auditoria?limit=${limit}&offset=${offset}`),
   estatisticas: () => chamar<Estatisticas>("/v1/estatisticas"),
   // Só administradores.
   fontes: () => chamar<Fonte[]>("/v1/sources"),
   canarios: () => chamar<Canario[]>("/v1/canarios"),
+  solicitacoes: () => chamar<Solicitacao[]>("/v1/conta/admin/solicitacoes"),
+  atualizarSolicitacao: (id: string, status: Solicitacao["status"], observacao?: string) =>
+    chamar<Solicitacao>(`/v1/conta/admin/solicitacoes/${id}`, json("PATCH", { status, observacao })),
   plantarCanarios: (quantidade: number) => chamar<Canario[]>("/v1/canarios", json("POST", { quantidade })),
   usuarios: () => chamar<UsuarioAdmin[]>("/v1/conta/admin/usuarios"),
   alterarUsuario: (id: string, body: UsuarioAdminIn) =>

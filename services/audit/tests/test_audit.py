@@ -66,3 +66,39 @@ async def test_ip_so_na_auditoria_geral_e_migracao_de_coluna(tmp_path):
         geral = client.get("/v1/auditoria/geral", headers=admin).json()
         assert geral[0]["ip_origem"] == "203.0.113.9" and geral[0]["user_agent"] == "Navegador Teste/1.0"
         assert client.get("/v1/auditoria/geral?ip=198.51.100.1", headers=admin).json() == []
+
+
+
+def test_retencao_apaga_so_o_que_passou_do_prazo(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from audit_svc.models import Alerta, AuditEntry, IdentidadeConsultada, aplicar_retencao, setup_schema
+    from morbidus_common.db import make_engine
+    from sqlalchemy import func, select
+    from sqlalchemy.orm import Session
+
+    engine = make_engine(f"sqlite:///{tmp_path / 'ret.db'}")
+    setup_schema(engine)
+    agora = datetime.now(timezone.utc)
+
+    def entrada(eid, dias):
+        quando = agora - timedelta(days=dias)
+        return [
+            AuditEntry(
+                event_id=eid, query_id=eid, tenant_id="t", finalidade="onboarding", status="sem_registro",
+                score=0.0, fontes_consultadas=[], ocorrido_em=quando,
+            ),
+            IdentidadeConsultada(query_id=eid, chave="registro:x", tenant_id="t", ocorrido_em=quando),
+            Alerta(regra="rajada", severidade="alta", descricao="x", criado_em=quando),
+        ]
+
+    with Session(engine) as db:
+        for item in entrada("velho", 800) + entrada("recente", 100):
+            db.add(item)
+        db.commit()
+
+    assert aplicar_retencao(engine, 730) == {"consultas": 1, "identidades": 1, "alertas": 1}
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(AuditEntry)) == 1
+    # Prazo configurado abaixo do piso de 180 dias não apaga o registro de 100 dias.
+    assert aplicar_retencao(engine, 30)["consultas"] == 0

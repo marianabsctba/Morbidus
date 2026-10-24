@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alerta, api, AuditEntryGeral, Canario, Fonte, UsuarioAdmin, UsuarioAdminIn } from "../api";
+import { Alerta, api, AuditEntryGeral, Canario, Fonte, Solicitacao, UsuarioAdmin, UsuarioAdminIn } from "../api";
 import { EtiquetaStatus } from "../componentes";
 import { FINALIDADES } from "../dados";
 import { dataBr, dataHoraBr } from "../util";
 
-type Aba = "alertas" | "usuarios" | "auditoria" | "fontes" | "canarios" | "cti";
+type Aba = "alertas" | "solicitacoes" | "usuarios" | "auditoria" | "fontes" | "canarios" | "cti";
 type Props = { tratarErro: (e: unknown) => string };
 
 const LIMITES: [string, number | null][] = [
@@ -18,6 +18,7 @@ export default function Admin({ tratarErro }: Props) {
   const [aba, setAba] = useState<Aba>("alertas");
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
+  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>([]);
   const [filtroConta, setFiltroConta] = useState("");
   const [filtroIp, setFiltroIp] = useState("");
   const [erro, setErro] = useState<string | null>(null);
@@ -40,10 +41,22 @@ export default function Admin({ tratarErro }: Props) {
     [tratarErro],
   );
 
+  const carregarSolicitacoes = useCallback(
+    () =>
+      api
+        .solicitacoes()
+        .then(setSolicitacoes)
+        .catch((e) => setErro(tratarErro(e))),
+    [tratarErro],
+  );
+
   useEffect(() => {
     carregarUsuarios();
     carregarAlertas();
-  }, [carregarUsuarios, carregarAlertas]);
+    carregarSolicitacoes();
+  }, [carregarUsuarios, carregarAlertas, carregarSolicitacoes]);
+
+  const abertas = solicitacoes.filter((s) => s.status === "aberta").length;
 
   function verConsultas(alerta: Alerta) {
     setFiltroConta(alerta.tenant_id ?? "");
@@ -62,6 +75,9 @@ export default function Admin({ tratarErro }: Props) {
       <div className="abas abas-pagina" role="tablist">
         <button role="tab" aria-selected={aba === "alertas"} onClick={() => setAba("alertas")}>
           Alertas{alertas.length > 0 && <span className="contador">{alertas.length}</span>}
+        </button>
+        <button role="tab" aria-selected={aba === "solicitacoes"} onClick={() => setAba("solicitacoes")}>
+          Solicitações{abertas > 0 && <span className="contador">{abertas}</span>}
         </button>
         <button role="tab" aria-selected={aba === "usuarios"} onClick={() => setAba("usuarios")}>
           Usuários{pendentes > 0 && <span className="contador">{pendentes}</span>}
@@ -93,6 +109,14 @@ export default function Admin({ tratarErro }: Props) {
             carregarUsuarios();
           }}
           verConsultas={verConsultas}
+          setErro={setErro}
+          tratarErro={tratarErro}
+        />
+      )}
+      {aba === "solicitacoes" && (
+        <Solicitacoes
+          solicitacoes={solicitacoes}
+          recarregar={carregarSolicitacoes}
           setErro={setErro}
           tratarErro={tratarErro}
         />
@@ -628,6 +652,93 @@ function Cti() {
           no servidor.
         </dd>
       </dl>
+    </div>
+  );
+}
+
+
+function Solicitacoes({
+  solicitacoes,
+  recarregar,
+  setErro,
+  tratarErro,
+}: {
+  solicitacoes: Solicitacao[];
+  recarregar: () => void;
+  setErro: (e: string | null) => void;
+  tratarErro: (e: unknown) => string;
+}) {
+  async function marcar(s: Solicitacao, status: Solicitacao["status"]) {
+    const observacao =
+      status === "atendida" ? window.prompt("Como foi atendida? (fica registrado)", s.observacao ?? "") ?? undefined : undefined;
+    if (status === "atendida" && observacao === undefined) return;
+    setErro(null);
+    try {
+      await api.atualizarSolicitacao(s.id, status, observacao);
+      recarregar();
+    } catch (e) {
+      setErro(tratarErro(e));
+    }
+  }
+
+  if (solicitacoes.length === 0) {
+    return (
+      <div className="painel">
+        <h2>Solicitações de titulares</h2>
+        <p className="mudo">Nenhum pedido recebido pelo formulário do encarregado.</p>
+      </div>
+    );
+  }
+
+  const prazo = (s: Solicitacao) => {
+    const limite = new Date(new Date(s.criado_em).getTime() + 15 * 86400000);
+    const dias = Math.ceil((limite.getTime() - Date.now()) / 86400000);
+    return dias >= 0 ? `${dias} dia(s) para responder` : `prazo vencido há ${-dias} dia(s)`;
+  };
+
+  return (
+    <div className="alertas">
+      {solicitacoes.map((s) => (
+        <article key={s.id} className={`alerta-card ${s.status === "aberta" ? "alta" : ""}`}>
+          <div className="alerta-topo">
+            <span className={`etiqueta ${s.status === "aberta" ? "sangue" : "osso"}`}>
+              <span className="ponto" />
+              {s.status}
+            </span>
+            <span className="dado mudo" style={{ fontSize: 12 }}>
+              {s.protocolo}
+            </span>
+          </div>
+          <h3>{s.rotulo}</h3>
+          <p className="dado mudo" style={{ fontSize: 12 }}>
+            {s.nome} · <a href={`mailto:${s.email}?subject=${encodeURIComponent(`Sua solicitação ${s.protocolo}`)}`}>{s.email}</a>
+            {" · "}
+            {dataHoraBr(s.criado_em)}
+          </p>
+          <p style={{ whiteSpace: "pre-wrap" }}>{s.mensagem}</p>
+          {s.status === "aberta" ? (
+            <p className="mudo" style={{ fontSize: 12 }}>
+              {prazo(s)}
+            </p>
+          ) : (
+            <p className="mudo" style={{ fontSize: 12 }}>
+              Atendida em {s.atendido_em ? dataHoraBr(s.atendido_em) : "?"}
+              {s.observacao ? `: ${s.observacao}` : ""}
+            </p>
+          )}
+          <div className="acoes-alerta">
+            {s.status === "aberta" ? (
+              <button className="botao fantasma" onClick={() => marcar(s, "atendida")}>
+                Marcar como atendida
+              </button>
+            ) : (
+              <button className="botao fantasma" onClick={() => marcar(s, "aberta")}>
+                Reabrir
+              </button>
+            )}
+          </div>
+        </article>
+      ))}
     </div>
   );
 }

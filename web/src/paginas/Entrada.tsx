@@ -50,7 +50,10 @@ export default function Entrada({ aoEntrar }: { aoEntrar: () => void }) {
             />
           )}
         </div>
-        <p className="rodape-login">Gratuito e open source. Toda consulta exige finalidade e fica registrada.</p>
+        <p className="rodape-login">
+          Gratuito e open source. Toda consulta exige finalidade e fica registrada.{" "}
+          <a href="/privacidade">Política de Privacidade e Termos de Uso</a>
+        </p>
       </div>
     </main>
   );
@@ -245,7 +248,11 @@ function FormCadastro({ aoCadastrar }: { aoCadastrar: (verificar: boolean) => vo
       <label className="aceite">
         <input type="checkbox" checked={aceite} onChange={(e) => setAceite(e.target.checked)} />
         <span>
-          Vou usar o MORBiDus só para prevenir fraude ou para pesquisa, nunca para expor ou contatar familiares, e sei
+          Li e aceito a{" "}
+          <a href="/privacidade" target="_blank" rel="noopener">
+            Política de Privacidade e os Termos de Uso
+          </a>
+          . Vou usar o MORBiDus só para prevenir fraude ou para pesquisa, nunca para expor ou contatar familiares, e sei
           que minhas consultas ficam registradas.
         </span>
       </label>

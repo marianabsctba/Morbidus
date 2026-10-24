@@ -12,6 +12,10 @@ CADASTRO = {
     "uso_pretendido": "prevencao_fraude",
     "aceite_termos": True,
 }
+import tempfile
+import os
+
+DB_ACEITE = os.path.join(tempfile.mkdtemp(), "aceite.db").replace("\\", "/")
 CONSULTA = {"X-Forwarded-Method": "POST", "X-Forwarded-Uri": "/v1/consultas"}
 
 
@@ -283,3 +287,64 @@ def test_admin_nao_desativa_mfa_e_reset_pelo_token(client):
     assert client.get("/v1/conta").json()["mfa_ativo"] is False
     client.cookies.clear()
     assert _entrar(client).json()["mfa"] is False
+
+
+
+def test_aceite_no_cadastro_e_nova_versao_exige_novo_aceite():
+    from identity_svc.config import IdentitySettings
+    from identity_svc.main import build_app
+
+    def app(versao):
+        return build_app(IdentitySettings(
+            database_url=f"sqlite:///{DB_ACEITE}", admin_token="adm", cookie_secure=False, termos_versao=versao,
+        ))
+
+    with TestClient(app("2026-10-24")) as client:
+        _cadastrar_e_liberar(client)
+        _entrar(client)
+        conta = client.get("/v1/conta").json()
+        assert conta["aceite_pendente"] is False and conta["termos_versao"] == "2026-10-24"
+        assert client.get("/auth/verify").status_code == 200
+        cookie = client.cookies.get(contas.COOKIE)
+
+    # A política muda: a mesma sessão continua valendo, mas consultar exige o novo aceite.
+    with TestClient(app("2027-01-01")) as client:
+        client.cookies.set(contas.COOKIE, cookie)
+        assert client.get("/v1/conta").json()["aceite_pendente"] is True
+        bloqueado = client.get("/auth/verify")
+        assert bloqueado.status_code == 403 and "Política" in bloqueado.json()["detail"]
+        assert client.post("/v1/conta/aceite").status_code == 204
+        assert client.get("/auth/verify").status_code == 200
+
+
+
+def test_formulario_do_encarregado(monkeypatch):
+    from identity_svc import titulares
+
+    avisos = []
+    monkeypatch.setattr(titulares, "_avisar", lambda s, sol, admins: avisos.append((sol.protocolo, admins)))
+    with _client() as client:
+        pedido = {
+            "nome": "Filha de Exemplo",
+            "email": "filha@exemplo.com",
+            "tipo": "remocao_registro_obito",
+            "mensagem": "O registro do meu pai tem a data de falecimento errada.",
+        }
+        resp = client.post("/v1/privacidade/solicitacoes", json=pedido)
+        assert resp.status_code == 201 and resp.json()["protocolo"].startswith("MBD-") and resp.json()["prazo_dias"] == 15
+        assert avisos[0][0] == resp.json()["protocolo"]
+        # Campo-armadilha preenchido: responde sucesso, mas não grava nem avisa.
+        assert client.post("/v1/privacidade/solicitacoes", json={**pedido, "site": "http://spam"}).status_code == 201
+        assert len(avisos) == 1
+        assert client.post("/v1/privacidade/solicitacoes", json={**pedido, "mensagem": "curta"}).status_code == 422
+
+        # Só administradora com MFA vê e atende.
+        _cadastrar_e_liberar(client)
+        _entrar(client)
+        assert client.get("/v1/conta/admin/solicitacoes").status_code == 403
+        client.patch("/v1/admin/usuarios/analista@exemplo.com", json={"admin": True}, headers={"X-Admin-Token": "adm"})
+        _ativar_mfa(client)
+        (sol,) = client.get("/v1/conta/admin/solicitacoes").json()
+        assert sol["rotulo"].startswith("Correção ou remoção") and sol["status"] == "aberta"
+        feito = client.patch(f"/v1/conta/admin/solicitacoes/{sol['id']}", json={"status": "atendida", "observacao": "Data corrigida."}).json()
+        assert feito["status"] == "atendida" and feito["atendido_em"] and feito["observacao"] == "Data corrigida."

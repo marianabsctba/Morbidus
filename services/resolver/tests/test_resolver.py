@@ -133,3 +133,12 @@ async def test_canario_nao_usa_nome_parecido_com_pessoa_real(ambiente):
     finally:
         canarios.random.SystemRandom = original
     assert plantados[0]["nome"] != "GUMERCINDO BELARMINO QUINTANILHA"
+
+
+
+async def test_reindexar_reconstroi_o_indice(ambiente):
+    client, bus, index = ambiente
+    await bus.publish(Topics.OBITUARY_RAW, _raw("a", "Fulano de Tal da Silva", "https://a/x"))
+    index.docs.clear()
+    assert client.post("/interno/reindexar").json() == {"reindexados": 1}
+    assert len(index.docs) == 1

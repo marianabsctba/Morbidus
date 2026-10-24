@@ -8,6 +8,7 @@ import Cobertura from "./paginas/Cobertura";
 import Consulta from "./paginas/Consulta";
 import Conta from "./paginas/Conta";
 import Entrada from "./paginas/Entrada";
+import Privacidade from "./paginas/Privacidade";
 import Verificar from "./paginas/Verificar";
 
 function AdminSemMfa() {
@@ -73,6 +74,16 @@ export default function App() {
     return e instanceof Error ? e.message : String(e);
   }, []);
 
+  // Pública: precisa abrir antes do login, a partir do cadastro.
+  if (local.pathname === "/privacidade") {
+    return (
+      <>
+        <Atmosfera />
+        <Privacidade aoVoltar={() => navegar("/", { replace: true })} />
+      </>
+    );
+  }
+
   if (local.pathname === "/verificar") {
     return (
       <>
@@ -98,6 +109,15 @@ export default function App() {
       <>
         <Atmosfera />
         <Entrada aoEntrar={atualizarConta} />
+      </>
+    );
+  }
+
+  if (conta.aceite_pendente) {
+    return (
+      <>
+        <Atmosfera />
+        <AceitePendente aoAceitar={atualizarConta} aoSair={sair} />
       </>
     );
   }
@@ -169,10 +189,66 @@ export default function App() {
           </Routes>
         </main>
         <footer className="rodape">
-          <span>MORBiDus · Death Identity Fraud Prevention · open source e gratuito</span>
+          <span>
+            MORBiDus · Death Identity Fraud Prevention · open source e gratuito ·{" "}
+            <a href="/privacidade" target="_blank" rel="noopener">
+              Privacidade e termos
+            </a>
+          </span>
           <span>Toda consulta é registrada com finalidade declarada (LGPD).</span>
         </footer>
       </div>
     </>
+  );
+}
+
+
+function AceitePendente({ aoAceitar, aoSair }: { aoAceitar: () => void; aoSair: () => void }) {
+  const [li, setLi] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function aceitar() {
+    try {
+      await api.aceitarTermos();
+      aoAceitar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <main className="login">
+      <div className="cartaz">
+        <h1 style={{ margin: 0 }}>
+          <Marca />
+        </h1>
+        <div className="gotas" style={{ marginTop: 32 }} />
+        <div className="painel">
+          <h2>Antes de continuar</h2>
+          <p>
+            Para usar o MORBiDus, leia e aceite a nossa{" "}
+            <a href="/privacidade" target="_blank" rel="noopener">
+              Política de Privacidade e Termos de Uso
+            </a>
+            . Ela explica que dados tratamos, por quanto tempo e quais são os seus direitos.
+          </p>
+          <label className="aceite">
+            <input type="checkbox" checked={li} onChange={(e) => setLi(e.target.checked)} />
+            <span>Li e aceito a Política de Privacidade e os Termos de Uso.</span>
+          </label>
+          {erro && (
+            <div className="alerta" role="alert" style={{ marginBottom: 16 }}>
+              {erro}
+            </div>
+          )}
+          <button className="botao largo" disabled={!li} onClick={aceitar}>
+            Aceitar e continuar
+          </button>
+          <button className="botao fantasma" style={{ marginTop: 12 }} onClick={aoSair}>
+            Sair
+          </button>
+        </div>
+      </div>
+    </main>
   );
 }

@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 
-from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
 from morbidus_common.db import utcnow
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
@@ -19,6 +19,7 @@ from identity_svc.correio import envia_confirmacao
 from identity_svc.keys import generate_key
 from identity_svc import mfa
 from identity_svc.models import (
+    Aceite,
     Administrador,
     ApiKey,
     DesafioMfa,
@@ -99,6 +100,8 @@ class ContaOut(BaseModel):
     criado_em: datetime
     admin: bool
     mfa_ativo: bool
+    aceite_pendente: bool
+    termos_versao: str
 
 
 class UsuarioAdmin(BaseModel):
@@ -170,6 +173,18 @@ def usuario_da_sessao(db: Session, token: str | None) -> Usuario | None:
     return usuario
 
 
+def aceite_pendente(db: Session, settings: IdentitySettings, usuario_id: str) -> bool:
+    return db.scalar(
+        select(Aceite.id).where(Aceite.usuario_id == usuario_id, Aceite.versao == settings.termos_versao)
+    ) is None
+
+
+def ip_da_requisicao(request: Request) -> str | None:
+    # Atrás do gateway, o IP real chega no X-Real-Ip (ver query_svc.ip_do_cliente).
+    ip = (request.headers.get("x-real-ip") or "").strip()
+    return ip[:45] or (request.client.host if request.client else None)
+
+
 def eh_admin(db: Session, usuario_id: str) -> bool:
     return db.get(Administrador, usuario_id) is not None
 
@@ -195,6 +210,25 @@ def apaga_mfa(db: Session, usuario_id: str) -> None:
 def _aware(dt: datetime) -> datetime:
     # SQLite devolve datas sem fuso; o Postgres devolve com fuso.
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def dependencias(get_db):
+    """Dependências de sessão para as rotas: qualquer conta logada, ou administradora com MFA."""
+
+    def usuario_logado(mbd_sessao: str | None = Cookie(default=None), db: Session = Depends(get_db)) -> Usuario:
+        usuario = usuario_da_sessao(db, mbd_sessao)
+        if usuario is None:
+            raise HTTPException(status_code=401, detail="faça login para continuar")
+        return usuario
+
+    def admin_logado(usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)) -> Usuario:
+        if not eh_admin(db, usuario.id):
+            raise HTTPException(status_code=403, detail="acesso restrito à administração")
+        if not mfa_ativo(db, usuario.id):
+            raise HTTPException(status_code=403, detail="ative o MFA em Minha conta para usar a administração")
+        return usuario
+
+    return usuario_logado, admin_logado
 
 
 def build_router(settings: IdentitySettings, get_db) -> APIRouter:
@@ -236,18 +270,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             return True
         return False
 
-    def usuario_logado(mbd_sessao: str | None = Cookie(default=None), db: Session = Depends(get_db)) -> Usuario:
-        usuario = usuario_da_sessao(db, mbd_sessao)
-        if usuario is None:
-            raise HTTPException(status_code=401, detail="faça login para continuar")
-        return usuario
-
-    def admin_logado(usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)) -> Usuario:
-        if not eh_admin(db, usuario.id):
-            raise HTTPException(status_code=403, detail="acesso restrito à administração")
-        if not mfa_ativo(db, usuario.id):
-            raise HTTPException(status_code=403, detail="ative o MFA em Minha conta para usar a administração")
-        return usuario
+    usuario_logado, admin_logado = dependencias(get_db)
 
     def _para_admin(db: Session, u: Usuario) -> UsuarioAdmin:
         return UsuarioAdmin(
@@ -267,7 +290,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
         )
 
     @router.post("/v1/contas", status_code=201)
-    def cadastrar(body: CadastroIn, tarefas: BackgroundTasks, db: Session = Depends(get_db)):
+    def cadastrar(body: CadastroIn, request: Request, tarefas: BackgroundTasks, db: Session = Depends(get_db)):
         if db.scalar(select(Usuario).where(Usuario.email == body.email)):
             raise HTTPException(status_code=409, detail="já existe uma conta com este e-mail")
         tenant = Tenant(nome=body.organizacao or body.nome)
@@ -284,6 +307,7 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
         )
         db.add(usuario)
         db.flush()
+        db.add(Aceite(usuario_id=usuario.id, versao=settings.termos_versao, ip=ip_da_requisicao(request)))
         if email_obrigatorio:
             token, digest = novo_token()
             db.add(Verificacao(token_hash=digest, usuario_id=usuario.id, expira_em=utcnow() + timedelta(hours=24)))
@@ -415,7 +439,15 @@ def build_router(settings: IdentitySettings, get_db) -> APIRouter:
             criado_em=usuario.criado_em,
             admin=eh_admin(db, usuario.id),
             mfa_ativo=mfa_ativo(db, usuario.id),
+            aceite_pendente=aceite_pendente(db, settings, usuario.id),
+            termos_versao=settings.termos_versao,
         )
+
+    @router.post("/v1/conta/aceite", status_code=204)
+    def aceitar_termos(request: Request, usuario: Usuario = Depends(usuario_logado), db: Session = Depends(get_db)):
+        if aceite_pendente(db, settings, usuario.id):
+            db.add(Aceite(usuario_id=usuario.id, versao=settings.termos_versao, ip=ip_da_requisicao(request)))
+            db.commit()
 
     @router.get("/v1/conta/admin/usuarios", response_model=list[UsuarioAdmin])
     def listar_usuarios(_: Usuario = Depends(admin_logado), db: Session = Depends(get_db)):

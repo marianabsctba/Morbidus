@@ -101,6 +101,17 @@ def build_app(
                 for c in plantar(db, index, body.quantidade)
             ]
 
+    @app.post("/interno/reindexar", include_in_schema=False)
+    def reindexar() -> dict:
+        """Reconstrói o índice de busca a partir do Postgres (depois de um restore). Rota interna."""
+        index.ensure_index()
+        total = 0
+        with sessions() as db:
+            for rec in db.scalars(select(DeathRecord).execution_options(yield_per=1000)):
+                index.upsert(to_event(rec))
+                total += 1
+        return {"reindexados": total}
+
     @app.get("/v1/records/{record_id}", response_model=DeathRecordNormalized)
     def get_record(record_id: str):
         with sessions() as db:
