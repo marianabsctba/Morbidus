@@ -51,6 +51,7 @@ class OpenSearchDeathIndex(DeathIndex):
             "nome_normalizado": {"type": "text"},
             "chave_fonetica": {"type": "keyword"},
             "idade": {"type": "integer"},
+            "data_nascimento": {"type": "date"},
             "data_falecimento": {"type": "date"},
             "ano_nascimento_estimado": {"type": "integer"},
             "cidade": {"type": "keyword"},

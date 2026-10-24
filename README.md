@@ -50,10 +50,10 @@ curl -X POST localhost:8080/v1/admin/tenants -H "X-Admin-Token: $ADMIN_TOKEN" -H
 curl -X POST localhost:8080/v1/admin/tenants/<tenant_id>/api-keys -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"nome": "producao"}'
 ```
 
-Coletar os obituários de exemplo (o crawler não fica exposto no gateway):
+O crawler coleta as novidades de todas as fontes a cada `CRAWL_INTERVAL_MINUTES`. Para percorrer o histórico completo (o crawler não fica exposto no gateway):
 
 ```bash
-docker compose exec crawler python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8000/v1/sources/fixture/run', method='POST')).read())"
+docker compose exec crawler python -c "import urllib.request as u; print(u.urlopen(u.Request('http://localhost:8000/v1/backfill', method='POST')).read())"
 ```
 
 Consultar:
@@ -76,17 +76,33 @@ python -m venv .venv
 
 `tests/test_e2e.py` sobe crawler, resolver, query, provider e audit no mesmo processo e percorre o fluxo inteiro.
 
+Para montar uma base local sem Docker (SQLite em `morbidus_local.db`, ignorado pelo git):
+
+```bash
+.venv/Scripts/python scripts/coletar.py              # novidades de todas as fontes
+.venv/Scripts/python scripts/coletar.py --backfill   # histórico completo, leva horas
+```
+
+Esse arquivo tem dados pessoais. Não publique nem compartilhe: o acesso aos registros é só pela API, com finalidade declarada e auditoria.
+
+## Fontes
+
+O mapeamento das 27 capitais, com a situação de cada uma e o caminho institucional para as que não têm fonte aberta, está em [docs/fontes-obituarios.md](docs/fontes-obituarios.md). Hoje são 11 fontes ativas em 10 capitais.
+
 ## Novas fontes de obituário
 
-1. Crie uma classe em `services/crawler/crawler_svc/spiders/` herdando de `Spider`, com `source_id`, `cidade`, `uf`, `start_urls` e `parse`.
-2. Registre em `SPIDERS` e habilite em `ENABLED_SPIDERS`.
+1. Crie uma classe em `services/crawler/crawler_svc/spiders/` herdando de `Spider` (página única) ou `PaginatedSpider` (listagem com `page_url(n)`), com `source_id`, `cidade`, `uf`, `descricao` e `parse`.
+2. Registre em `SPIDERS`.
 3. Extraia **somente dados do falecido**: nome, idade, datas e local. Nomes de parentes e o texto do obituário nunca saem do HTML bruto.
+4. Escreva o teste com uma fixture que reproduza a marcação da fonte com **pessoas fictícias**. Nunca salve HTML real no repositório.
 
 Regras para fontes reais: respeitar `robots.txt` e os termos de uso do site, manter o intervalo entre requisições e preferir listas de serviços funerários e cemitérios municipais, que costumam ser mais estáveis que páginas de jornal.
 
 ## Próximos passos
 
-- Mapear as fontes de obituário das 27 capitais e escrever os spiders
+- Parcerias com o setor funerário (ABRASIF, concessionárias de cemitérios) e pedidos via LAI para as capitais sem fonte aberta
+- Ingestão de parceiros: API de envio e upload de arquivo, publicando no mesmo tópico do Kafka
+- Canal do titular (correção e remoção de registro) e "falecido não encontrado"
 - Conectores Serpro e CRC Nacional quando houver contrato
 - Painel web (React) para analistas
 - `watchlist-svc`: monitorar CPFs e avisar por webhook quando surgir um óbito

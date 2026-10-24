@@ -115,7 +115,8 @@ def build_app(
         for c in candidatos:
             score, motivos = score_candidate(c, body.nome, body.uf, body.cidade, body.data_nascimento)
             if score >= settings.sinal_fraco_min:
-                detalhes = {k: c.get(k) for k in ("nome", "idade", "data_falecimento", "cidade", "uf", "fontes")}
+                campos = ("nome", "idade", "data_nascimento", "data_falecimento", "cidade", "uf", "fontes")
+                detalhes = {k: c.get(k) for k in campos}
                 detalhes["motivos"] = motivos
                 evidencias.append(Evidencia(tipo="obituario", fonte=c["record_id"], score=score, detalhes=detalhes))
         return sorted(evidencias, key=lambda e: e.score, reverse=True)

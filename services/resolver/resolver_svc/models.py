@@ -18,6 +18,7 @@ class DeathRecord(Base):
     nome_normalizado: Mapped[str] = mapped_column(String(300))
     chave_fonetica: Mapped[str] = mapped_column(String(200), index=True)
     idade: Mapped[int | None]
+    data_nascimento: Mapped[date | None] = mapped_column(Date)
     data_falecimento: Mapped[date | None] = mapped_column(Date)
     ano_nascimento_estimado: Mapped[int | None]
     cidade: Mapped[str] = mapped_column(String(120))

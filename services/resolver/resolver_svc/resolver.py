@@ -20,6 +20,10 @@ def _cidade(texto: str) -> str:
     return strip_accents(texto).strip().lower()
 
 
+def _idade_em(nascimento, referencia) -> int:
+    return referencia.year - nascimento.year - ((referencia.month, referencia.day) < (nascimento.month, nascimento.day))
+
+
 def to_event(rec: DeathRecord) -> DeathRecordNormalized:
     return DeathRecordNormalized(
         record_id=rec.id,
@@ -27,6 +31,7 @@ def to_event(rec: DeathRecord) -> DeathRecordNormalized:
         nome_normalizado=rec.nome_normalizado,
         chave_fonetica=rec.chave_fonetica,
         idade=rec.idade,
+        data_nascimento=rec.data_nascimento,
         data_falecimento=rec.data_falecimento,
         ano_nascimento_estimado=rec.ano_nascimento_estimado,
         cidade=rec.cidade,
@@ -50,14 +55,20 @@ class Resolver:
         await asyncio.to_thread(self._index.upsert, record)
         await self._bus.publish(Topics.DEATH_RECORD_NORMALIZED, record, key=record.record_id)
 
-    def _find_match(self, db: Session, chave: str, raw: ObituaryRaw, data, idade) -> DeathRecord | None:
+    def _find_match(self, db: Session, chave: str, raw: ObituaryRaw, data, idade, nascimento) -> DeathRecord | None:
         candidatos = db.scalars(
             select(DeathRecord).where(DeathRecord.chave_fonetica == chave, DeathRecord.uf == raw.uf.upper())
         )
         for rec in candidatos:
             if _cidade(rec.cidade) != _cidade(raw.cidade):
                 continue
-            if data and rec.data_falecimento:
+            if nascimento and rec.data_nascimento:
+                # Data de nascimento é o desempate mais forte entre homônimos.
+                if nascimento != rec.data_nascimento:
+                    continue
+                if not (data and rec.data_falecimento) or abs((rec.data_falecimento - data).days) <= self._window:
+                    return rec
+            elif data and rec.data_falecimento:
                 if abs((rec.data_falecimento - data).days) <= self._window:
                     return rec
             elif idade is not None and rec.idade == idade:
@@ -71,6 +82,7 @@ class Resolver:
             referencia = raw.occurred_at.date()
             data = parse_data(raw.data_falecimento, referencia) or parse_data(raw.data_sepultamento, referencia)
             idade = parse_idade(raw.idade)
+            nascimento = parse_data(raw.data_nascimento, referencia)
             chave = phonetic_key(raw.nome)
             if not chave:
                 log.warning("entrada sem nome aproveitável: %s", raw.event_id)
@@ -78,7 +90,7 @@ class Resolver:
                 db.commit()
                 return None
 
-            rec = self._find_match(db, chave, raw, data, idade)
+            rec = self._find_match(db, chave, raw, data, idade, nascimento)
             if rec is None:
                 rec = DeathRecord(
                     nome=raw.nome.strip(),
@@ -91,7 +103,12 @@ class Resolver:
                 db.add(rec)
             rec.idade = rec.idade if rec.idade is not None else idade
             rec.data_falecimento = rec.data_falecimento or data
-            if rec.idade is not None:
+            rec.data_nascimento = rec.data_nascimento or nascimento
+            if rec.data_nascimento:
+                rec.ano_nascimento_estimado = rec.data_nascimento.year
+                if rec.idade is None and rec.data_falecimento:
+                    rec.idade = _idade_em(rec.data_nascimento, rec.data_falecimento)
+            elif rec.idade is not None:
                 ano_base = rec.data_falecimento.year if rec.data_falecimento else referencia.year
                 rec.ano_nascimento_estimado = ano_base - rec.idade
             if raw.source_url not in rec.fontes:

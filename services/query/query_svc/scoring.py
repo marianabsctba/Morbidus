@@ -30,8 +30,16 @@ def score_candidate(
         score += 0.1
         motivos.append("mesma cidade")
 
+    nascimento = candidato.get("data_nascimento")
     ano_estimado = candidato.get("ano_nascimento_estimado")
-    if data_nascimento and ano_estimado:
+    if data_nascimento and nascimento:
+        if nascimento == data_nascimento.isoformat():
+            score += 0.2
+            motivos.append("data de nascimento idêntica")
+        else:
+            score -= 0.4
+            motivos.append("data de nascimento diferente")
+    elif data_nascimento and ano_estimado:
         # Idade no obituário pode não ter feito aniversário ainda: tolera 1 ano.
         if abs(ano_estimado - data_nascimento.year) <= 1:
             score += 0.1

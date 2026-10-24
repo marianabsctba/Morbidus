@@ -12,6 +12,16 @@ class BlockedByRobots(Exception):
     pass
 
 
+def _decode(resp: httpx.Response) -> str:
+    # Sites antigos (ASP.NET, CMS próprios) servem Latin-1 sem declarar charset.
+    if "charset" in resp.headers.get("content-type", "").lower():
+        return resp.text
+    try:
+        return resp.content.decode("utf-8")
+    except UnicodeDecodeError:
+        return resp.content.decode("cp1252", errors="replace")
+
+
 class PoliteFetcher:
     def __init__(self, user_agent: str, delay_seconds: float, client: httpx.AsyncClient | None = None) -> None:
         self._ua = user_agent
@@ -50,7 +60,7 @@ class PoliteFetcher:
             finally:
                 self._last_hit[origin] = time.monotonic()
         resp.raise_for_status()
-        return resp.text
+        return _decode(resp)
 
     async def aclose(self) -> None:
         await self._client.aclose()

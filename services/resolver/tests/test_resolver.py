@@ -66,6 +66,21 @@ async def test_homonimo_em_outra_cidade_nao_e_mesclado(ambiente):
     assert len(index.docs) == 2
 
 
+async def test_data_de_nascimento_separa_homonimos(ambiente):
+    _, bus, index = ambiente
+    a = _raw("a", "Fulano de Tal da Silva", "https://a/x", idade=None)
+    b = _raw("b", "Fulano de Tal da Silva", "https://b/y", idade=None)
+    c = _raw("c", "Fulano de Tal da Silva", "https://c/z", idade=None)
+    a.data_nascimento, b.data_nascimento, c.data_nascimento = "01/02/1950", "01/02/1950", "15/08/1961"
+    for evento in (a, b, c):
+        await bus.publish(Topics.OBITUARY_RAW, evento)
+    assert len(index.docs) == 2
+    mesclado = next(d for d in index.docs.values() if d["data_nascimento"] == "1950-02-01")
+    assert len(mesclado["fontes"]) == 2
+    assert mesclado["idade"] == 76
+    assert mesclado["ano_nascimento_estimado"] == 1950
+
+
 async def test_evento_repetido_e_ignorado(ambiente):
     _, bus, _ = ambiente
     evento = _raw("a", "Fulano de Tal da Silva", "https://a/x")

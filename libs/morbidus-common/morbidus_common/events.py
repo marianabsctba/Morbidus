@@ -35,6 +35,7 @@ class ObituaryRaw(Event):
     uf: str
     nome: str
     idade: str | None = None
+    data_nascimento: str | None = None
     data_falecimento: str | None = None
     data_sepultamento: str | None = None
     local: str | None = None
@@ -47,6 +48,7 @@ class DeathRecordNormalized(Event):
     nome_normalizado: str
     chave_fonetica: str
     idade: int | None = None
+    data_nascimento: date | None = None
     data_falecimento: date | None = None
     ano_nascimento_estimado: int | None = None
     cidade: str

@@ -101,6 +101,16 @@ def test_idade_incompativel_derruba_o_score(ambiente):
     assert resp["status"] in ("sinal_fraco", "sem_registro")
 
 
+def test_data_de_nascimento_exata_pesa_mais_que_o_ano():
+    from query_svc.scoring import score_candidate
+
+    candidato = {**_registro().model_dump(mode="json"), "data_nascimento": "1944-05-10"}
+    exato, motivos = score_candidate(candidato, "Fulano de Tal da Silva", "PR", None, date(1944, 5, 10))
+    diferente, _ = score_candidate(candidato, "Fulano de Tal da Silva", "PR", None, date(1944, 7, 1))
+    assert "data de nascimento idêntica" in motivos
+    assert exato >= 0.95 > 0.6 > diferente
+
+
 def test_provider_fora_do_ar_nao_derruba_consulta():
     def quebrado(request):
         return httpx.Response(503)
